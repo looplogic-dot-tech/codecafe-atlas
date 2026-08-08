@@ -1,0 +1,3738 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f3d63">
+  <title>Escáner HP de inventario y contadores — reporte Excel profesional</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17212b;
+      --muted: #5a6773;
+      --line: #d9e1e8;
+      --paper: #ffffff;
+      --panel: #f4f7fa;
+      --brand: #0f3d63;
+      --brand-2: #17689c;
+      --ok: #157347;
+      --warn: #9a6700;
+      --danger: #b42318;
+      --shadow: 0 10px 28px rgba(15, 61, 99, .10);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #eaf0f5;
+    }
+
+    .app {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 18px 14px 42px;
+    }
+
+    header {
+      margin-bottom: 16px;
+      padding: 20px;
+      color: white;
+      border-radius: 18px;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      box-shadow: var(--shadow);
+    }
+
+    header h1 { margin: 0 0 6px; font-size: clamp(1.45rem, 3vw, 2.1rem); }
+    header p { margin: 0; opacity: .9; line-height: 1.45; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(320px, .88fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-head {
+      padding: 15px 17px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .card-head h2 { margin: 0; font-size: 1.08rem; }
+    .card-body { padding: 16px; }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      align-items: center;
+      margin-bottom: 13px;
+    }
+
+    button, .file-button {
+      appearance: none;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 10px 13px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .08s ease, opacity .2s ease, background .2s ease;
+    }
+
+    button:active, .file-button:active { transform: translateY(1px); }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .primary { background: var(--brand); color: white; }
+    .secondary { background: #e8f0f6; color: var(--brand); border-color: #c8d8e5; }
+    .success { background: var(--ok); color: white; }
+    .danger { background: #fff0ee; color: var(--danger); border-color: #f3c9c4; }
+    .ghost { background: white; color: var(--ink); border-color: var(--line); }
+
+    .file-button input { display: none; }
+
+    .preview-wrap {
+      position: relative;
+      min-height: 300px;
+      display: grid;
+      place-items: center;
+      border: 1px dashed #aebdca;
+      border-radius: 13px;
+      overflow: hidden;
+      background:
+        linear-gradient(45deg, #f7f9fb 25%, transparent 25%),
+        linear-gradient(-45deg, #f7f9fb 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #f7f9fb 75%),
+        linear-gradient(-45deg, transparent 75%, #f7f9fb 75%);
+      background-size: 22px 22px;
+      background-position: 0 0, 0 11px, 11px -11px, -11px 0;
+    }
+
+    #previewCanvas { display: block; max-width: 100%; height: auto; }
+    .empty-preview { color: var(--muted); text-align: center; padding: 40px 18px; }
+
+    .status {
+      margin-top: 13px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px 12px;
+      background: #fbfcfd;
+    }
+
+    .status-line { display: flex; justify-content: space-between; gap: 12px; font-size: .93rem; }
+    .progress-track {
+      height: 8px;
+      margin-top: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e4e9ee;
+    }
+    .progress-bar { width: 0%; height: 100%; background: var(--brand-2); transition: width .2s ease; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+    label { display: block; margin-bottom: 5px; font-size: .86rem; font-weight: 750; color: #34424f; }
+    input[type="text"], input[type="number"], input[type="datetime-local"] {
+      width: 100%;
+      border: 1px solid #bdc9d4;
+      border-radius: 9px;
+      padding: 10px 11px;
+      background: white;
+      color: var(--ink);
+      font: inherit;
+    }
+    input:focus { outline: 3px solid rgba(23, 104, 156, .16); border-color: var(--brand-2); }
+    input[readonly] {
+      background: #eef7f1;
+      border-color: #9fc9ad;
+      color: #0f5132;
+      font-weight: 800;
+    }
+
+    .field-note { margin-top: 4px; color: var(--muted); font-size: .76rem; }
+    .confidence { margin-top: 12px; padding: 10px 11px; border-radius: 10px; font-size: .88rem; }
+    .confidence.good { color: #0f5132; background: #dff2e7; border: 1px solid #badbcc; }
+    .confidence.warn { color: #664d03; background: #fff3cd; border: 1px solid #ffecb5; }
+
+    details { margin-top: 13px; border-top: 1px solid var(--line); padding-top: 11px; }
+    summary { cursor: pointer; font-weight: 700; color: var(--brand); }
+    pre {
+      max-height: 230px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 10px;
+      border-radius: 10px;
+      background: #111820;
+      color: #e8eef4;
+      font-size: .78rem;
+    }
+
+    .history-card { margin-top: 16px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .87rem; }
+    th, td { padding: 10px 9px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    th { background: var(--panel); color: #34424f; }
+    td.num, th.num { text-align: right; }
+    .mini-btn { padding: 6px 9px; border-radius: 8px; font-size: .78rem; }
+    .batch-serial-input {
+      width: 160px;
+      min-width: 130px;
+      padding: 7px 8px;
+      border-radius: 8px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .empty-row { text-align: center; color: var(--muted); padding: 25px; }
+    .history-date-row td {
+      padding: 0;
+      background: #e8f0f6;
+      border-bottom: 1px solid #c8d5df;
+    }
+    .history-date-toggle {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 13px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--brand);
+      font: inherit;
+      font-weight: 800;
+      text-align: left;
+      cursor: pointer;
+      box-shadow: none;
+    }
+    .history-date-toggle:hover { background: #dce9f2; transform: none; }
+    .history-date-toggle .history-arrow {
+      min-width: 20px;
+      text-align: center;
+      transition: transform .18s ease;
+    }
+    .history-date-toggle[aria-expanded="false"] .history-arrow { transform: rotate(-90deg); }
+    .history-record-row[hidden] { display: none; }
+
+    .privacy-note {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: .82rem;
+      line-height: 1.4;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #e8f0f6;
+      color: var(--brand);
+      font-size: .75rem;
+      font-weight: 750;
+    }
+
+
+
+    .batch-card { margin-top: 16px; }
+    .batch-toolbar { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      min-width: 76px;
+      justify-content: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: .74rem;
+      font-weight: 800;
+      white-space: nowrap;
+      border: 1px solid var(--line);
+      background: #eef2f5;
+      color: #42515d;
+    }
+    .status-badge.processing { background: #e8f0f6; color: var(--brand); border-color: #c8d8e5; }
+    .status-badge.ok { background: #dff2e7; color: #0f5132; border-color: #badbcc; }
+    .status-badge.incomplete { background: #fff3cd; color: #664d03; border-color: #ffecb5; }
+    .status-badge.error { background: #fff0ee; color: var(--danger); border-color: #f3c9c4; }
+    .status-review-tools {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .status-review-tools .mini-btn { white-space: nowrap; }
+    .selected-row td { background: #eef7fd; }
+    #batchBody td:first-child { max-width: 330px; overflow: hidden; text-overflow: ellipsis; }
+
+
+    body.counter-review-open { overflow: hidden; }
+
+    .counter-review-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      background: rgba(9, 20, 31, .78);
+      backdrop-filter: blur(3px);
+    }
+
+    .counter-review-modal[hidden] {
+      display: none !important;
+    }
+
+    .counter-review-window {
+      width: min(97vw, 1740px);
+      height: min(96vh, 1120px);
+      min-width: 880px;
+      min-height: 650px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #9fb0bf;
+      border-radius: 16px;
+      background: white;
+      box-shadow: 0 28px 80px rgba(0, 0, 0, .38);
+    }
+
+    .counter-review-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 13px 16px;
+      color: white;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    }
+
+    .counter-review-heading {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .counter-review-heading h2 {
+      margin: 0 0 3px;
+      font-size: 1.18rem;
+    }
+
+    .counter-review-heading p {
+      margin: 0;
+      overflow: hidden;
+      opacity: .88;
+      font-size: .84rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .counter-review-close {
+      flex: 0 0 auto;
+      width: 42px;
+      height: 42px;
+      padding: 0;
+      color: white;
+      border-color: rgba(255, 255, 255, .48);
+      background: rgba(255, 255, 255, .12);
+      font-size: 1.35rem;
+    }
+
+    .counter-review-content {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(370px, 430px);
+    }
+
+    .counter-review-document {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: #dfe6ec;
+    }
+
+    .counter-review-toolbar {
+      flex: 0 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #b8c4cf;
+      background: #f7f9fb;
+    }
+
+    .counter-review-toolbar button {
+      padding: 8px 11px;
+    }
+
+    .counter-review-position {
+      margin-left: auto;
+      color: #475467;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .counter-review-scroll {
+      position: relative;
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      padding: 20px;
+      text-align: center;
+      background:
+        linear-gradient(45deg, #e8edf1 25%, transparent 25%),
+        linear-gradient(-45deg, #e8edf1 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e8edf1 75%),
+        linear-gradient(-45deg, transparent 75%, #e8edf1 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    }
+
+    #counterReviewCanvas {
+      display: block;
+      margin: 0 auto;
+      max-width: none;
+      background: white;
+      box-shadow: 0 5px 24px rgba(0, 0, 0, .28);
+    }
+
+    .counter-review-loading {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      padding: 30px;
+      color: var(--brand);
+      background: rgba(238, 243, 247, .94);
+      font-size: 1.02rem;
+      font-weight: 800;
+    }
+
+    .counter-review-loading[hidden] {
+      display: none !important;
+    }
+
+    .counter-review-form {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 16px;
+      border-left: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .counter-review-status {
+      margin-bottom: 13px;
+      padding: 10px 11px;
+      border: 1px solid #c8d8e5;
+      border-radius: 10px;
+      color: var(--brand);
+      background: #e8f0f6;
+      font-size: .86rem;
+      font-weight: 750;
+    }
+
+    .counter-review-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 11px;
+    }
+
+    .counter-review-grid .field.full {
+      grid-column: 1 / -1;
+    }
+
+    .counter-review-grid input {
+      padding: 9px 10px;
+    }
+
+    .counter-review-raw {
+      max-height: 155px;
+      margin-top: 12px;
+      overflow: auto;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: #34424f;
+      background: #f7f9fb;
+      font-size: .77rem;
+      line-height: 1.38;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .counter-review-actions {
+      position: sticky;
+      bottom: -16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin: 16px -16px -16px;
+      padding: 13px 16px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, .97);
+    }
+
+    .counter-review-actions .wide {
+      grid-column: 1 / -1;
+    }
+
+    @media (max-width: 980px) {
+      .counter-review-window {
+        min-width: 0;
+        width: 99vw;
+        height: 98vh;
+      }
+
+      .counter-review-content {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(360px, 58vh) minmax(0, 1fr);
+      }
+
+      .counter-review-form {
+        border-top: 1px solid var(--line);
+        border-left: none;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .grid { grid-template-columns: 1fr; }
+      .preview-wrap { min-height: 240px; }
+    }
+
+    @media (max-width: 480px) {
+      .app { padding: 10px 9px 30px; }
+      header, .card { border-radius: 13px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      button, .file-button { width: 100%; text-align: center; }
+      .toolbar { display: grid; grid-template-columns: 1fr 1fr; }
+      .toolbar .wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>Registro de contadores</h1>
+      <p>Procesa fotografías, imágenes, archivos PDF y carpetas completas. Extrae el modelo, número de serie y contadores, y genera un archivo Excel con los colores, columnas y presentación del formato original. También conserva exportación CSV como respaldo.</p>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <div class="card-head"><h2>1. Cargar y escanear documento</h2></div>
+        <div class="card-body">
+          <div class="toolbar">
+            <label class="file-button primary wide">
+              Elegir imágenes o PDF
+              <input id="fileInput" type="file" accept="image/*,.pdf,application/pdf" multiple>
+            </label>
+            <label class="file-button secondary">
+              Tomar fotografía
+              <input id="cameraInput" type="file" accept="image/*" capture="environment">
+            </label>
+            <label class="file-button secondary">
+              Examinar carpeta
+              <input id="folderInput" type="file" accept="image/*,.pdf,application/pdf" webkitdirectory directory multiple>
+            </label>
+            <button id="rotateLeft" class="secondary" type="button" disabled>↶ Girar</button>
+            <button id="rotateRight" class="secondary" type="button" disabled>Girar ↷</button>
+            <button id="scanButton" class="success wide" type="button" disabled>Escanear documento actual</button>
+          </div>
+
+          <div class="preview-wrap" id="previewWrap">
+            <div class="empty-preview" id="emptyPreview">
+              <strong>No hay documento seleccionado.</strong><br>
+              Agrega imágenes, PDF o una carpeta completa. Después selecciona un elemento del lote para revisarlo.
+            </div>
+            <canvas id="previewCanvas" hidden></canvas>
+          </div>
+
+          <div class="status" aria-live="polite">
+            <div class="status-line"><span id="statusText">Esperando archivos.</span><span id="statusPercent">0%</span></div>
+            <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+          </div>
+          <p class="privacy-note"><span class="pill" id="ocrEngineStatus">Detectando motor OCR…</span><br><br>Los documentos se procesan localmente. Los PDF con texto interno se leen directamente; los PDF escaneados y las imágenes usan Tesseract instalado en el sistema, sin descargar nuevamente el motor ni el idioma español. Tesseract.js se utiliza como primer respaldo cuando el motor nativo no está disponible o falla. Si ambos métodos fallan, puede utilizarse OCR.Space como último respaldo; requiere conexión a Internet y se mostrará un aviso antes de enviar la imagen al servicio externo. PDF.js y ExcelJS pueden requerir Internet en su primera carga.</p>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><h2>2. Revisar valores extraídos</h2></div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="field full">
+              <label for="equipmentId">Número de serie / identificador del equipo</label>
+              <input id="equipmentId" type="text" autocomplete="off" placeholder="Se detecta automáticamente. Ejemplo: VNB0B00881">
+              <div class="field-note">Revisa el número de serie antes de guardar, especialmente cuando el OCR pueda confundir 0/O, 1/I o 8/B.</div>
+            </div>
+            <div class="field full">
+              <label for="modelId">Modelo</label>
+              <input id="modelId" type="text" autocomplete="off" placeholder="Se detecta automáticamente. Ejemplo: HP LaserJet Pro M501dn">
+              <div class="field-note">El modelo se obtiene de “Nombre de producto” o “Descrip. disp.” y puede corregirse manualmente.</div>
+            </div>
+            <div class="field full">
+              <label for="scanDate">Fecha del registro</label>
+              <input id="scanDate" type="datetime-local">
+            </div>
+            <div class="field">
+              <label for="totalPrints">Total de impresiones</label>
+              <input id="totalPrints" type="number" min="0" step="1" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="equivalentPrints">Impresiones tamaño carta</label>
+              <input id="equivalentPrints" type="number" min="0" step="0.1" inputmode="decimal">
+            </div>
+            <div class="field full">
+              <label for="calculatedDifference">Impresiones tamaño oficio</label>
+              <input id="calculatedDifference" type="number" readonly tabindex="-1" aria-describedby="differenceNote">
+              <div class="field-note" id="differenceNote">Este campo se deja vacío por ahora. No se calcula ningún contador.</div>
+            </div>
+            <div class="field">
+              <label for="duplexSheets">Hojas a ambas caras</label>
+              <input id="duplexSheets" type="number" min="0" step="1" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="jamEvents">Eventos de atasco</label>
+              <input id="jamEvents" type="number" min="0" step="1" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="misfeedEvents">Páginas mal alimentadas</label>
+              <input id="misfeedEvents" type="number" min="0" step="1" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="economodePrints">Impresiones Economode</label>
+              <input id="economodePrints" type="number" min="0" step="1" inputmode="numeric">
+            </div>
+          </div>
+
+          <div id="confidenceBox" class="confidence warn">Aún no se ha realizado un escaneo.</div>
+
+          <div class="toolbar" style="margin-top: 13px; margin-bottom: 0;">
+            <button id="saveButton" type="button" class="success wide">Guardar registro</button>
+            <button id="copyButton" type="button" class="secondary">Copiar valores</button>
+            <button id="clearFields" type="button" class="ghost">Limpiar campos</button>
+          </div>
+
+          <details>
+            <summary>Ver texto reconocido (serie e impresiones)</summary>
+            <pre id="rawText">Sin texto reconocido.</pre>
+          </details>
+        </div>
+      </article>
+    </section>
+
+
+    <section class="card" style="margin-top:20px;">
+      <div class="card-head"><h2>3. Datos comunes del reporte Excel</h2></div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="field">
+            <label for="reportZone">ZONA</label>
+            <input id="reportZone" type="text" value="10" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="reportDependency">Dependencia</label>
+            <select id="reportDependency">
+              <option value="">Sin especificar</option>
+            </select>
+            <div class="field-note">Se usa únicamente para clasificar e identificar el reporte. No consulta ni modifica el inventario.</div>
+          </div>
+          <div class="field">
+            <label for="reportNotes">Notas</label>
+            <input id="reportNotes" type="text" autocomplete="off" placeholder="Opcional">
+          </div>
+          <div class="field">
+            <label for="reportMonth">Mes que aparecerá en los encabezados</label>
+            <input id="reportMonth" type="text" value="Junio" autocomplete="off" placeholder="Ejemplo: Junio">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card batch-card">
+      <div class="card-head" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+        <div>
+          <h2>Lote de documentos</h2>
+          <span class="pill" id="queueCount">0 documentos</span>
+        </div>
+        <div class="batch-toolbar">
+          <button id="scanAllButton" type="button" class="success" disabled>Escanear lote completo</button>
+          <button id="saveBatch" type="button" class="primary" disabled>Guardar resultados válidos</button>
+          <button id="exportBatch" type="button" class="success" disabled>Exportar reporte Excel</button>
+          <button id="exportBatchCsv" type="button" class="secondary" disabled>Exportar respaldo CSV</button>
+          <button id="clearQueue" type="button" class="danger" disabled>Vaciar lote</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Archivo / página</th>
+              <th>Estado</th>
+              <th>Número de serie</th>
+              <th>Modelo</th>
+              <th class="num">Total</th>
+              <th class="num">Oficio</th>
+              <th class="num">Carta</th>
+              <th class="num">Dúplex</th>
+              <th class="num">Atascos</th>
+              <th class="num">Mal alim.</th>
+              <th class="num">Economode</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="batchBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card history-card">
+      <div class="card-head" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+        <div>
+          <h2>Historial de contadores</h2>
+          <span class="pill" id="recordCount">0 registros</span>
+          <span class="pill" id="databaseStatus">Conectando con la base…</span>
+        </div>
+        <div class="toolbar" style="margin:0;">
+          <button id="exportExcel" type="button" class="success">Exportar reporte Excel</button>
+          <button id="exportCsv" type="button" class="secondary">Exportar respaldo CSV</button>
+          <button id="clearHistory" type="button" class="danger">Borrar historial de contadores</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Equipo / serie</th>
+              <th>Modelo</th>
+              <th>Archivo</th>
+              <th class="num">Total</th>
+              <th class="num">Oficio</th>
+              <th class="num">Carta</th>
+              <th class="num">Dúplex</th>
+              <th class="num">Atascos</th>
+              <th class="num">Mal alim.</th>
+              <th class="num">Economode</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+<div
+  id="counterReviewModal"
+  class="counter-review-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="counterReviewTitle"
+  hidden
+>
+  <section class="counter-review-window">
+    <header class="counter-review-header">
+      <div class="counter-review-heading">
+        <h2 id="counterReviewTitle">Revisar documento y corregir valores</h2>
+        <p id="counterReviewFile">Documento</p>
+      </div>
+      <button
+        id="counterReviewClose"
+        type="button"
+        class="counter-review-close"
+        aria-label="Cerrar revisión"
+        title="Cerrar sin aplicar cambios"
+      >×</button>
+    </header>
+
+    <div class="counter-review-content">
+      <section class="counter-review-document">
+        <div class="counter-review-toolbar">
+          <button id="counterReviewPrevious" type="button" class="secondary">← Anterior</button>
+          <button id="counterReviewNext" type="button" class="secondary">Siguiente →</button>
+          <button id="counterReviewRotateLeft" type="button" class="ghost">↶ Girar</button>
+          <button id="counterReviewRotateRight" type="button" class="ghost">Girar ↷</button>
+          <button id="counterReviewFit" type="button" class="secondary">Ajustar al ancho</button>
+          <button id="counterReviewZoomOut" type="button" class="ghost">−</button>
+          <span id="counterReviewZoomLabel" class="pill">100%</span>
+          <button id="counterReviewZoomIn" type="button" class="ghost">+</button>
+          <span id="counterReviewPosition" class="counter-review-position">1 de 1</span>
+        </div>
+
+        <div id="counterReviewScroll" class="counter-review-scroll">
+          <canvas id="counterReviewCanvas"></canvas>
+          <div id="counterReviewLoading" class="counter-review-loading">
+            Preparando documento en alta resolución…
+          </div>
+        </div>
+      </section>
+
+      <aside class="counter-review-form">
+        <div id="counterReviewStatus" class="counter-review-status">
+          Revisa y corrige los valores detectados.
+        </div>
+
+        <div class="counter-review-grid">
+          <div class="field full">
+            <label for="counterReviewSerial">Número de serie / equipo</label>
+            <input id="counterReviewSerial" type="text" autocomplete="off">
+          </div>
+
+          <div class="field full">
+            <label for="counterReviewModel">Modelo</label>
+            <input id="counterReviewModel" type="text" autocomplete="off">
+          </div>
+
+          <div class="field full">
+            <label for="counterReviewDate">Fecha del registro</label>
+            <input id="counterReviewDate" type="datetime-local">
+          </div>
+
+          <div class="field">
+            <label for="counterReviewTotal">Total de impresiones</label>
+            <input id="counterReviewTotal" type="number" min="0" step="1">
+          </div>
+
+          <div class="field">
+            <label for="counterReviewEquivalent">Impresiones tamaño carta</label>
+            <input id="counterReviewEquivalent" type="number" min="0" step="0.1">
+          </div>
+
+          <div class="field">
+            <label for="counterReviewLetter">Impresiones tamaño oficio</label>
+            <input id="counterReviewLetter" type="number" readonly>
+          </div>
+
+          <div class="field">
+            <label for="counterReviewDuplex">Hojas a ambas caras</label>
+            <input id="counterReviewDuplex" type="number" min="0" step="1">
+          </div>
+
+          <div class="field">
+            <label for="counterReviewJams">Eventos de atasco</label>
+            <input id="counterReviewJams" type="number" min="0" step="1">
+          </div>
+
+          <div class="field">
+            <label for="counterReviewMisfeeds">Páginas mal alimentadas</label>
+            <input id="counterReviewMisfeeds" type="number" min="0" step="1">
+          </div>
+
+          <div class="field full">
+            <label for="counterReviewEconomode">Impresiones Economode</label>
+            <input id="counterReviewEconomode" type="number" min="0" step="1">
+          </div>
+        </div>
+
+        <details>
+          <summary>Ver texto reconocido</summary>
+          <div id="counterReviewRaw" class="counter-review-raw">Sin texto reconocido.</div>
+        </details>
+
+        <div class="counter-review-actions">
+          <button id="counterReviewCancel" type="button" class="ghost">
+            Cerrar sin cambios
+          </button>
+          <button id="counterReviewApply" type="button" class="success">
+            Aplicar correcciones
+          </button>
+          <button id="counterReviewApplyNext" type="button" class="primary wide">
+            Aplicar y revisar siguiente
+          </button>
+        </div>
+      </aside>
+    </div>
+  </section>
+</div>
+
+  <script>
+    'use strict';
+
+    const PRINT_CROP = { x: 0.025, y: 0.54, w: 0.61, h: 0.41 };
+    const SERIAL_CROP = { x: 0.035, y: 0.175, w: 0.56, h: 0.255 };
+
+    // Segundo formato utilizado por algunos equipos:
+    // encabezado "Counter", "Serial No." y una sola fila "Total".
+    const SIMPLE_COUNTER_CROP = { x: 0.025, y: 0.16, w: 0.95, h: 0.40 };
+    const STORAGE_KEY = 'hp_impresiones_scans_v2';
+    const REPORT_SETTINGS_KEY = 'hp_impresiones_report_settings_v1';
+    const PDF_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const TESSERACT_FALLBACK_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js';
+    const OCR_SPACE_ENDPOINT = 'https://api.ocr.space/parse/image';
+    const OCR_SPACE_DEFAULT_API_KEY = 'helloworld';
+
+
+    // La misma configuración se entrega también como archivo JSON independiente.
+    // Se mantiene integrada para que el HTML continúe funcionando al abrirse directamente con file://.
+    const REPORT_LAYOUT = Object.freeze({
+      version: 2,
+      sheetName: 'Registro de contadores',
+      headerColor: '074F69',
+      headerFontColor: 'FFFFFF',
+      borderColor: '000000',
+      fontName: 'Aptos Narrow',
+      headerHeight: 52,
+      dataHeight: 20,
+      widths: [8, 12, 34, 26, 20, 20, 18, 22, 22, 20, 18, 20, 24, 38],
+      fills: [
+        'D9D9D9', 'D9D9D9', 'EAF2F8', 'FFFFFF', 'FFFFFF', 'FFFFFF', 'FFFFFF',
+        'FFFFFF', 'FFFFFF', 'FFFFFF', 'FFFFFF', 'FFFFFF', 'DAE9F8'
+      ],
+      leftAlignedColumns: [3, 4, 5, 13, 14],
+      decimalColumns: []
+    });
+
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
+    }
+
+    const state = {
+      image: null,
+      fileName: '',
+      rotation: 0,
+      worker: null,
+      busy: false,
+      lastText: '',
+      history: loadHistory(),
+      queue: [],
+      currentIndex: -1,
+      pdfCache: new Map(),
+      ocrContext: null,
+      dbBridge: null,
+      dbReady: false,
+      nativeOcrReady: false,
+      nativeOcrInfo: null,
+      nativeOcrRequests: new Map(),
+      nextNativeOcrRequest: 1,
+      tesseractFallbackPromise: null,
+      onlineOcrNoticeAccepted: false
+    };
+
+    const counterReview = {
+      index: -1,
+      source: null,
+      oriented: null,
+      rotation: 0,
+      zoom: 1,
+      token: 0
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const fields = {
+      total: $('totalPrints'),
+      equivalent: $('equivalentPrints'),
+      duplex: $('duplexSheets'),
+      jams: $('jamEvents'),
+      misfeeds: $('misfeedEvents'),
+      economode: $('economodePrints')
+    };
+
+    setDefaultDate();
+    loadReportSettings();
+    renderHistory();
+    renderBatch();
+    initializeDatabaseBridge();
+
+    $('fileInput').addEventListener('change', async (event) => {
+      await addFiles(event.target.files);
+      event.target.value = '';
+    });
+
+    $('cameraInput').addEventListener('change', async (event) => {
+      await addFiles(event.target.files);
+      event.target.value = '';
+    });
+
+    $('folderInput').addEventListener('change', async (event) => {
+      await addFiles(event.target.files);
+      event.target.value = '';
+    });
+
+    $('rotateLeft').addEventListener('click', () => rotateCurrent(-90));
+    $('rotateRight').addEventListener('click', () => rotateCurrent(90));
+    $('scanButton').addEventListener('click', scanCurrentDocument);
+    $('scanAllButton').addEventListener('click', scanAllDocuments);
+    $('saveBatch').addEventListener('click', saveBatchRecords);
+    $('exportBatch').addEventListener('click', exportBatchExcel);
+    $('exportBatchCsv').addEventListener('click', exportBatchCsv);
+    $('clearQueue').addEventListener('click', clearQueue);
+    $('saveButton').addEventListener('click', saveRecord);
+    $('copyButton').addEventListener('click', copyValues);
+    $('clearFields').addEventListener('click', () => clearResultFields(true));
+    $('exportExcel').addEventListener('click', exportHistoryExcel);
+    $('exportCsv').addEventListener('click', exportCsv);
+    $('clearHistory').addEventListener('click', clearHistory);
+
+    $('counterReviewClose').addEventListener('click', closeCounterReview);
+    $('counterReviewCancel').addEventListener('click', closeCounterReview);
+    $('counterReviewFit').addEventListener('click', fitCounterReview);
+    $('counterReviewZoomOut').addEventListener('click', () => changeCounterReviewZoom(-0.15));
+    $('counterReviewZoomIn').addEventListener('click', () => changeCounterReviewZoom(0.15));
+    $('counterReviewRotateLeft').addEventListener('click', () => rotateCounterReview(-90));
+    $('counterReviewRotateRight').addEventListener('click', () => rotateCounterReview(90));
+    $('counterReviewPrevious').addEventListener('click', () => moveCounterReview(-1));
+    $('counterReviewNext').addEventListener('click', () => moveCounterReview(1));
+    $('counterReviewApply').addEventListener('click', () => applyCounterReview(true));
+    $('counterReviewApplyNext').addEventListener('click', applyCounterReviewAndNext);
+    $('counterReviewTotal').addEventListener('input', updateCounterReviewDifference);
+    $('counterReviewEquivalent').addEventListener('input', updateCounterReviewDifference);
+    $('counterReviewModal').addEventListener('click', (event) => {
+      if (event.target === $('counterReviewModal')) closeCounterReview();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !$('counterReviewModal').hidden) {
+        closeCounterReview();
+      }
+    });
+
+    $('scanDate').addEventListener('change', () => {
+      const item = currentItem();
+      if (!item) return;
+      item.readingDate = $('scanDate').value;
+      item.saved = false;
+    });
+
+    Object.entries(fields).forEach(([key, input]) => {
+      input.addEventListener('input', () => {
+        updateCalculatedDifference();
+        const item = currentItem();
+        if (!item) return;
+        item.values[key] = input.value === '' ? null : Number(input.value);
+        item.saved = false;
+        item.error = '';
+        setDerivedStatus(item);
+        renderBatch();
+      });
+    });
+
+    $('equipmentId').addEventListener('change', () => {
+      const item = currentItem();
+      if (!item) return;
+      const identifier = normalizeDocumentIdentifier($('equipmentId').value);
+      $('equipmentId').value = identifier;
+      item.equipment = identifier;
+      if (identifier) renameQueueItemFromIdentifier(item, identifier);
+      item.saved = false;
+      item.error = '';
+      setDerivedStatus(item);
+      renderBatch();
+    });
+
+    $('modelId').addEventListener('change', () => {
+      const item = currentItem();
+      if (!item) return;
+      item.model = $('modelId').value.trim();
+      item.saved = false;
+      renderBatch();
+    });
+
+    ['reportZone', 'reportNotes', 'reportMonth']
+      .forEach((id) => $(id).addEventListener('input', persistReportSettings));
+
+    window.addEventListener('beforeunload', () => {
+      if (state.worker) state.worker.terminate();
+    });
+
+    function parseBridgeResponse(raw) {
+      if (raw && typeof raw === 'object') return raw;
+      try {
+        return JSON.parse(String(raw || '{}'));
+      } catch {
+        return { ok: false, error: 'La base devolvió una respuesta inválida.' };
+      }
+    }
+
+    function bridgeCall(method, ...args) {
+      return new Promise((resolve, reject) => {
+        if (!state.dbBridge || typeof state.dbBridge[method] !== 'function') {
+          resolve({ ok: false, fallback: true });
+          return;
+        }
+
+        state.dbBridge[method](...args, (raw) => {
+          const response = parseBridgeResponse(raw);
+          if (response.ok === false) {
+            reject(new Error(response.error || 'Error de la base de datos.'));
+            return;
+          }
+          resolve(response);
+        });
+      });
+    }
+
+    function setDatabaseStatus(text, mode = 'ok') {
+      const badge = $('databaseStatus');
+      if (!badge) return;
+      badge.textContent = text;
+      badge.style.background =
+        mode === 'ok' ? '#e7f6ed' :
+        mode === 'warn' ? '#fff7e8' :
+        '#fff1f0';
+      badge.style.color =
+        mode === 'ok' ? '#147d4b' :
+        mode === 'warn' ? '#8a4d00' :
+        '#b42318';
+    }
+
+    async function loadDependencyChoices() {
+      const select = $('reportDependency');
+      if (!select || !state.dbBridge || typeof state.dbBridge.listDependencies !== 'function') return;
+      try {
+        const response = await bridgeCall('listDependencies');
+        const dependencies = Array.isArray(response.dependencies) ? response.dependencies : [];
+        const savedValue = select.dataset.savedValue || select.value || '';
+        select.innerHTML = '<option value="">Sin especificar</option>';
+        dependencies.forEach((item) => {
+          const option = document.createElement('option');
+          option.value = item.name || '';
+          option.textContent = item.label || item.name || '';
+          select.appendChild(option);
+        });
+        if ([...select.options].some((option) => option.value === savedValue)) {
+          select.value = savedValue;
+        }
+      } catch (error) {
+        console.warn('No fue posible cargar las dependencias:', error);
+      }
+    }
+
+    async function initializeDatabaseBridge() {
+      if (!window.qt || !window.QWebChannel) {
+        setDatabaseStatus('Historial local de respaldo', 'warn');
+        return;
+      }
+
+      new QWebChannel(qt.webChannelTransport, async (channel) => {
+        state.dbBridge = channel.objects.counterDatabase;
+        await loadDependencyChoices();
+
+        if (
+          state.dbBridge.ocrFinished &&
+          typeof state.dbBridge.ocrFinished.connect === 'function'
+        ) {
+          state.dbBridge.ocrFinished.connect((requestId, raw) => {
+            const pending = state.nativeOcrRequests.get(String(requestId));
+            if (!pending) return;
+
+            state.nativeOcrRequests.delete(String(requestId));
+            clearTimeout(pending.timer);
+
+            const response = parseBridgeResponse(raw);
+            if (response.ok === false) {
+              pending.reject(
+                new Error(response.error || 'Falló el OCR nativo.')
+              );
+              return;
+            }
+            pending.resolve(response);
+          });
+        }
+
+        try {
+          const ocrInfo = await bridgeCall('ocrCapabilities');
+          state.nativeOcrInfo = ocrInfo;
+          state.nativeOcrReady = Boolean(ocrInfo.available);
+
+          const ocrBadge = $('ocrEngineStatus');
+          if (state.nativeOcrReady) {
+            const language =
+              ocrInfo.preferred_language || 'idioma disponible';
+            ocrBadge.textContent =
+              `OCR nativo listo · ${language}`;
+            ocrBadge.style.background = '#e7f6ed';
+            ocrBadge.style.color = '#147d4b';
+          } else {
+            ocrBadge.textContent =
+              'OCR web de respaldo';
+            ocrBadge.style.background = '#fff7e8';
+            ocrBadge.style.color = '#8a4d00';
+          }
+
+          if (state.history.length) {
+            await bridgeCall(
+              'saveRecords',
+              JSON.stringify(state.history)
+            );
+          }
+
+          const response = await bridgeCall('loadRecords');
+          if (Array.isArray(response.records)) {
+            state.history = response.records;
+            persistHistory();
+            renderHistory();
+          }
+
+          state.dbReady = true;
+          setDatabaseStatus(
+            `Base común conectada · ${state.history.length} registro(s)`,
+            'ok'
+          );
+        } catch (error) {
+          state.dbReady = false;
+          setDatabaseStatus('No se pudo conectar con la base común', 'error');
+          console.error(error);
+        }
+      });
+    }
+
+    async function saveRecordsToDatabase(records) {
+      if (!state.dbBridge) return false;
+      try {
+        await bridgeCall('saveRecords', JSON.stringify(records));
+        state.dbReady = true;
+        setDatabaseStatus(
+          `Base común conectada · ${state.history.length} registro(s)`,
+          'ok'
+        );
+        return true;
+      } catch (error) {
+        state.dbReady = false;
+        setDatabaseStatus('Guardado local; base no disponible', 'error');
+        console.error(error);
+        return false;
+      }
+    }
+
+    async function deleteRecordFromDatabase(recordId) {
+      if (!state.dbBridge) return true;
+      try {
+        await bridgeCall('deleteRecord', String(recordId || ''));
+        return true;
+      } catch (error) {
+        alert(`No se pudo eliminar de la base común: ${error.message || error}`);
+        return false;
+      }
+    }
+
+    function emptyValues() {
+      return { total: null, equivalent: null, duplex: null, jams: null, misfeeds: null, economode: null };
+    }
+
+    function countDetectedValues(values) {
+      return Object.values(values || {}).filter((value) => value !== null && value !== undefined && value !== '').length;
+    }
+
+    function setDerivedStatus(item, noValuesIsError = false) {
+      if (!item) return;
+      item.foundCount = countDetectedValues(item.values);
+
+      const simpleComplete =
+        item.format === 'simple_counter' &&
+        item.equipment &&
+        item.values &&
+        item.values.total !== null;
+
+      if (simpleComplete) {
+        item.status = 'ok';
+        item.statusText = 'Completo';
+      } else if (item.foundCount >= 5 && item.equipment) {
+        item.status = 'ok';
+        item.statusText = 'Completo';
+      } else if (item.foundCount >= 5) {
+        item.status = 'incomplete';
+        item.statusText = 'Sin serie';
+      } else if (item.foundCount > 0 || item.equipment) {
+        item.status = 'incomplete';
+        item.statusText = 'Incompleto';
+      } else if (noValuesIsError) {
+        item.status = 'error';
+        item.statusText = 'Sin valores';
+      } else {
+        item.status = 'pending';
+        item.statusText = 'Pendiente';
+      }
+    }
+
+    function makeId() {
+      return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    }
+
+    function isPdf(file) {
+      return file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    }
+
+    function isImage(file) {
+      return (file.type || '').startsWith('image/') || /\.(jpe?g|png|webp|bmp|gif|tiff?)$/i.test(file.name || '');
+    }
+
+    async function addFiles(fileList) {
+      const files = Array.from(fileList || []).filter((file) => isPdf(file) || isImage(file));
+      if (!files.length) {
+        alert('No se encontraron imágenes ni archivos PDF compatibles.');
+        return;
+      }
+
+      setBusy(true);
+      const firstNewIndex = state.queue.length;
+      let rejected = 0;
+
+      try {
+        for (let i = 0; i < files.length; i += 1) {
+          const file = files[i];
+          const relativePath = file.webkitRelativePath || file.name;
+          setStatus(`Preparando ${i + 1} de ${files.length}: ${relativePath}`, Math.round((i / files.length) * 15));
+
+          if (isPdf(file)) {
+            try {
+              const pdf = await getPdfDocument(file);
+              for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+                state.queue.push(createQueueItem(file, relativePath, 'pdf', pageNumber, pdf.numPages));
+              }
+            } catch (error) {
+              console.error(error);
+              rejected += 1;
+            }
+          } else {
+            state.queue.push(createQueueItem(file, relativePath, 'image', 1, 1));
+          }
+        }
+
+        renderBatch();
+        if (state.queue.length > firstNewIndex) {
+          await selectQueueItem(firstNewIndex);
+          setStatus(`${state.queue.length - firstNewIndex} documento(s) agregado(s) al lote.`, 0);
+        }
+        if (rejected) alert(`${rejected} PDF(s) no pudieron abrirse y fueron omitidos.`);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function queuePageSuffix(item) {
+      return item.kind === 'pdf'
+        ? ` — página ${item.pageNumber}/${item.totalPages}`
+        : '';
+    }
+
+    function refreshQueueItemLabel(item) {
+      const directory = item.relativeDirectory
+        ? `${item.relativeDirectory}/`
+        : '';
+      item.label = `${directory}${item.displayFileName}${queuePageSuffix(item)}`;
+      return item.label;
+    }
+
+    function normalizeDocumentIdentifier(value) {
+      let identifier = String(value || '')
+        .trim()
+        .replace(/\.pdf$/i, '')
+        .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+        .replace(/\s+/g, ' ');
+      identifier = identifier.replace(/[. ]+$/g, '');
+      if (!identifier || identifier === '.' || identifier === '..') return '';
+      return identifier;
+    }
+
+    function renameQueueItemFromIdentifier(item, value) {
+      const identifier = normalizeDocumentIdentifier(value);
+      if (!identifier) return '';
+
+      item.displayFileName = `${identifier}.pdf`;
+      item.saved = false;
+      refreshQueueItemLabel(item);
+      return identifier;
+    }
+
+    function createQueueItem(file, relativePath, kind, pageNumber, totalPages) {
+      const normalizedPath = String(relativePath || file.name || 'documento')
+        .replace(/\\/g, '/');
+      const slash = normalizedPath.lastIndexOf('/');
+      const relativeDirectory = slash >= 0
+        ? normalizedPath.slice(0, slash)
+        : '';
+      const displayFileName = slash >= 0
+        ? normalizedPath.slice(slash + 1)
+        : normalizedPath;
+
+      const item = {
+        id: makeId(),
+        file,
+        relativePath: normalizedPath,
+        relativeDirectory,
+        displayFileName: displayFileName || file.name || 'documento',
+        label: '',
+        kind,
+        pageNumber,
+        totalPages,
+        rotation: 0,
+        status: 'pending',
+        statusText: 'Pendiente',
+        values: emptyValues(),
+        foundCount: 0,
+        text: '',
+        equipment: '',
+        model: '',
+        readingDate: $('scanDate').value || '',
+        saved: false,
+        error: ''
+      };
+      refreshQueueItemLabel(item);
+      return item;
+    }
+
+    async function getPdfDocument(file) {
+      if (!window.pdfjsLib) throw new Error('PDF.js no se cargó. Comprueba la conexión a Internet.');
+      if (state.pdfCache.has(file)) return state.pdfCache.get(file);
+
+      const promise = (async () => {
+        const data = await file.arrayBuffer();
+        return window.pdfjsLib.getDocument({ data }).promise;
+      })();
+
+      state.pdfCache.set(file, promise);
+      try {
+        return await promise;
+      } catch (error) {
+        state.pdfCache.delete(file);
+        throw error;
+      }
+    }
+
+    async function getPdfPage(item) {
+      const pdf = await getPdfDocument(item.file);
+      return pdf.getPage(item.pageNumber);
+    }
+
+    async function renderPdfPage(item, maxSide = 2300) {
+      const page = await getPdfPage(item);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(3.2, Math.max(1.35, maxSide / Math.max(base.width, base.height)));
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(viewport.width));
+      canvas.height = Math.max(1, Math.round(viewport.height));
+      const context = canvas.getContext('2d', { alpha: false });
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: context, viewport }).promise;
+      return canvas;
+    }
+
+    async function extractPdfText(item) {
+      const page = await getPdfPage(item);
+      const content = await page.getTextContent();
+      const rows = [];
+
+      for (const entry of content.items || []) {
+        const text = String(entry.str || '').trim();
+        if (!text) continue;
+        const x = Number(entry.transform && entry.transform[4]) || 0;
+        const y = Number(entry.transform && entry.transform[5]) || 0;
+        let row = rows.find((candidate) => Math.abs(candidate.y - y) <= 3.5);
+        if (!row) {
+          row = { y, parts: [] };
+          rows.push(row);
+        }
+        row.parts.push({ x, text });
+      }
+
+      rows.sort((a, b) => b.y - a.y);
+      return rows
+        .map((row) => row.parts.sort((a, b) => a.x - b.x).map((part) => part.text).join(' '))
+        .join('\n');
+    }
+
+    function fileToImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(image);
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Imagen no válida'));
+        };
+        image.src = url;
+      });
+    }
+
+    async function loadSource(item) {
+      return item.kind === 'pdf' ? renderPdfPage(item) : fileToImage(item.file);
+    }
+
+    function sourceWidth(source) {
+      return source.naturalWidth || source.videoWidth || source.width || 0;
+    }
+
+    function sourceHeight(source) {
+      return source.naturalHeight || source.videoHeight || source.height || 0;
+    }
+
+    function normalizeAngle(angle) {
+      return ((angle % 360) + 360) % 360;
+    }
+
+    function orientedCanvas(source, angle, maxSide = 1900) {
+      const inputW = sourceWidth(source);
+      const inputH = sourceHeight(source);
+      if (!inputW || !inputH) throw new Error('El documento no tiene dimensiones válidas.');
+
+      const swap = angle === 90 || angle === 270;
+      const rawW = swap ? inputH : inputW;
+      const rawH = swap ? inputW : inputH;
+      const scale = Math.min(1, maxSide / Math.max(rawW, rawH));
+      const outW = Math.max(1, Math.round(rawW * scale));
+      const outH = Math.max(1, Math.round(rawH * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, outW, outH);
+      ctx.save();
+
+      if (angle === 90) {
+        ctx.translate(outW, 0);
+        ctx.rotate(Math.PI / 2);
+      } else if (angle === 180) {
+        ctx.translate(outW, outH);
+        ctx.rotate(Math.PI);
+      } else if (angle === 270) {
+        ctx.translate(0, outH);
+        ctx.rotate(-Math.PI / 2);
+      }
+
+      ctx.drawImage(source, 0, 0, inputW * scale, inputH * scale);
+      ctx.restore();
+      return canvas;
+    }
+
+    function cropRect(canvas, region) {
+      return {
+        x: Math.round(canvas.width * region.x),
+        y: Math.round(canvas.height * region.y),
+        w: Math.round(canvas.width * region.w),
+        h: Math.round(canvas.height * region.h)
+      };
+    }
+
+    function drawPreview() {
+      if (!state.image) {
+        resetPreview();
+        return;
+      }
+
+      const source = orientedCanvas(state.image, state.rotation, 1350);
+      const preview = $('previewCanvas');
+      const maxWidth = Math.min(760, $('previewWrap').clientWidth || 760);
+      const scale = Math.min(1, maxWidth / source.width);
+      preview.width = Math.max(1, Math.round(source.width * scale));
+      preview.height = Math.max(1, Math.round(source.height * scale));
+      const ctx = preview.getContext('2d');
+      ctx.drawImage(source, 0, 0, preview.width, preview.height);
+
+      drawCropOverlay(ctx, preview, cropRect(preview, SERIAL_CROP), 'Número de serie', '#1565c0');
+      drawCropOverlay(ctx, preview, cropRect(preview, PRINT_CROP), 'Sección Impresiones', '#e65100');
+
+      $('emptyPreview').hidden = true;
+      preview.hidden = false;
+    }
+
+    function drawCropOverlay(ctx, canvas, rect, label, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(2, canvas.width / 350);
+      ctx.setLineDash([10, 7]);
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.setLineDash([]);
+      ctx.fillStyle = color;
+      ctx.font = `700 ${Math.max(12, Math.round(canvas.width / 48))}px system-ui`;
+      const textWidth = ctx.measureText(label).width;
+      const labelH = Math.max(22, Math.round(canvas.width / 30));
+      ctx.fillRect(rect.x, Math.max(0, rect.y - labelH), textWidth + 14, labelH);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, rect.x + 7, Math.max(16, rect.y - 6));
+      ctx.restore();
+    }
+
+    function resetPreview() {
+      $('previewCanvas').hidden = true;
+      $('emptyPreview').hidden = false;
+    }
+
+    function cropCanvas(full, region) {
+      const r = cropRect(full, region);
+      const raw = document.createElement('canvas');
+      raw.width = Math.max(1, r.w);
+      raw.height = Math.max(1, r.h);
+      const ctx = raw.getContext('2d', { alpha: false });
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, raw.width, raw.height);
+      ctx.drawImage(full, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+      return raw;
+    }
+
+    function getCropForOcr(source, angle) {
+      const full = orientedCanvas(source, angle, 2300);
+      const serial = enhanceForOcr(cropCanvas(full, SERIAL_CROP));
+      const prints = enhanceForOcr(cropCanvas(full, PRINT_CROP));
+      const gap = 70;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(serial.width, prints.width);
+      canvas.height = serial.height + gap + prints.height;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(serial, Math.round((canvas.width - serial.width) / 2), 0);
+      ctx.fillStyle = '#d3d9df';
+      ctx.fillRect(0, serial.height + Math.floor(gap / 2), canvas.width, 2);
+      ctx.drawImage(prints, Math.round((canvas.width - prints.width) / 2), serial.height + gap);
+      return canvas;
+    }
+
+    function getPrintCropForOcr(source, angle) {
+      const full = orientedCanvas(source, angle, 2700);
+      return enhanceForOcr(cropCanvas(full, PRINT_CROP), 2150);
+    }
+
+    function getSimpleCounterCropForOcr(source, angle) {
+      const full = orientedCanvas(source, angle, 2500);
+      return enhanceForOcr(cropCanvas(full, SIMPLE_COUNTER_CROP), 2200);
+    }
+
+    function enhanceForOcr(source, preferredWidth = null) {
+      const targetWidth = preferredWidth || Math.min(1900, Math.max(1250, source.width * 2));
+      const scale = targetWidth / source.width;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(source.width * scale);
+      canvas.height = Math.round(source.height * scale);
+      const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      const hist = new Uint32Array(256);
+      const gray = new Uint8Array(canvas.width * canvas.height);
+
+      for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+        const value = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+        gray[p] = value;
+        hist[value] += 1;
+      }
+
+      const total = gray.length;
+      const lowTarget = total * 0.025;
+      const highTarget = total * 0.985;
+      let cumulative = 0;
+      let low = 0;
+      let high = 255;
+      for (let i = 0; i < 256; i += 1) {
+        cumulative += hist[i];
+        if (cumulative >= lowTarget) { low = i; break; }
+      }
+      cumulative = 0;
+      for (let i = 0; i < 256; i += 1) {
+        cumulative += hist[i];
+        if (cumulative >= highTarget) { high = i; break; }
+      }
+      if (high <= low + 20) { low = 0; high = 255; }
+
+      for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+        let value = (gray[p] - low) * 255 / (high - low);
+        value = Math.max(0, Math.min(255, value));
+        value = value < 205 ? value * 0.78 : Math.min(255, value * 1.06);
+        data[i] = data[i + 1] = data[i + 2] = value;
+        data[i + 3] = 255;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+
+    function loadScriptOnce(url, id) {
+      const existing = document.getElementById(id);
+      if (existing) {
+        if (existing.dataset.loaded === 'true') {
+          return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => {
+          existing.addEventListener('load', resolve, { once: true });
+          existing.addEventListener('error', reject, { once: true });
+        });
+      }
+
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.id = id;
+        script.src = url;
+        script.async = true;
+        script.addEventListener('load', () => {
+          script.dataset.loaded = 'true';
+          resolve();
+        }, { once: true });
+        script.addEventListener('error', () => {
+          reject(new Error(`No se pudo cargar ${url}`));
+        }, { once: true });
+        document.head.appendChild(script);
+      });
+    }
+
+    async function ensureTesseractFallback() {
+      if (window.Tesseract) return;
+      if (!state.tesseractFallbackPromise) {
+        state.tesseractFallbackPromise = loadScriptOnce(
+          TESSERACT_FALLBACK_URL,
+          'codecafe-atlas-tesseract-fallback'
+        );
+      }
+      await state.tesseractFallbackPromise;
+    }
+
+    function recognizeWithNativeOcr(canvas, options = {}) {
+      return new Promise((resolve, reject) => {
+        if (!state.nativeOcrReady || !state.dbBridge) {
+          reject(new Error('El OCR nativo no está disponible.'));
+          return;
+        }
+
+        const requestId =
+          `counter-ocr-${Date.now()}-${state.nextNativeOcrRequest++}`;
+        const timer = setTimeout(() => {
+          state.nativeOcrRequests.delete(requestId);
+          reject(new Error('El OCR nativo excedió el tiempo máximo.'));
+        }, 180000);
+
+        state.nativeOcrRequests.set(requestId, {
+          resolve,
+          reject,
+          timer
+        });
+
+        let imageData;
+        try {
+          imageData = canvas.toDataURL('image/jpeg', 0.92);
+        } catch (error) {
+          state.nativeOcrRequests.delete(requestId);
+          clearTimeout(timer);
+          reject(error);
+          return;
+        }
+
+        state.dbBridge.recognizeImage(
+          requestId,
+          imageData,
+          JSON.stringify({
+            psm: options.psm || 6,
+            language:
+              options.language ||
+              state.nativeOcrInfo?.preferred_language ||
+              'spa+eng'
+          })
+        );
+      });
+    }
+
+    async function recognizeCanvas(canvas, options = {}) {
+      let nativeError = null;
+      let tesseractWebError = null;
+
+      if (state.nativeOcrReady && state.dbBridge) {
+        const context =
+          state.ocrContext || { base: 8, span: 72, prefix: '' };
+        setStatus(
+          `${context.prefix || ''}OCR nativo: leyendo documento…`,
+          context.base + context.span * 0.28
+        );
+
+        try {
+          const response = await recognizeWithNativeOcr(canvas, options);
+          return {
+            data: { text: response.text || '' },
+            engine: 'native',
+            language: response.language || ''
+          };
+        } catch (error) {
+          nativeError = error;
+          console.warn('Falló el OCR nativo; se intentará el respaldo web.', error);
+          setStatus(
+            `${context.prefix || ''}OCR nativo no disponible. Intentando OCR web…`,
+            context.base + context.span * 0.32
+          );
+        }
+      }
+
+      try {
+        const worker = await getWorker();
+        const result = await worker.recognize(canvas);
+        result.engine = 'web';
+        return result;
+      } catch (error) {
+        tesseractWebError = error;
+        console.warn('Falló Tesseract.js; se intentará OCR.Space.', error);
+      }
+
+      try {
+        return await recognizeWithOcrSpace(canvas, options);
+      } catch (ocrSpaceError) {
+        const details = [
+          nativeError ? `OCR nativo: ${nativeError.message || nativeError}` : '',
+          tesseractWebError ? `OCR web: ${tesseractWebError.message || tesseractWebError}` : '',
+          `OCR.Space: ${ocrSpaceError.message || ocrSpaceError}`
+        ].filter(Boolean).join(' | ');
+        throw new Error(`No fue posible completar el OCR. ${details}`);
+      }
+    }
+
+    function getOcrSpaceApiKey() {
+      return String(
+        localStorage.getItem('codecafe_atlas_ocr_space_api_key') ||
+        OCR_SPACE_DEFAULT_API_KEY
+      ).trim();
+    }
+
+    async function ensureOnlineOcrNotice() {
+      if (state.onlineOcrNoticeAccepted) return;
+
+      const accepted = window.confirm(
+        'El OCR nativo y el respaldo web local no están disponibles.\n\n' +
+        'CodeCafe Atlas intentará usar OCR.Space. Esta opción requiere conexión a Internet y enviará temporalmente la imagen del documento al servicio externo para reconocer el texto.\n\n' +
+        'Presiona Aceptar para continuar.'
+      );
+      if (!accepted) {
+        throw new Error('El usuario canceló el uso de OCR.Space.');
+      }
+      state.onlineOcrNoticeAccepted = true;
+    }
+
+    async function recognizeWithOcrSpace(canvas, options = {}) {
+      await ensureOnlineOcrNotice();
+
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('No se detectó conexión a Internet.');
+      }
+
+      const context = state.ocrContext || { base: 8, span: 72, prefix: '' };
+      setStatus(
+        `${context.prefix || ''}OCR.Space: enviando imagen para reconocimiento…`,
+        context.base + context.span * 0.36
+      );
+
+      const imageData = canvas.toDataURL('image/jpeg', 0.82);
+      const form = new FormData();
+      form.append('base64Image', imageData);
+      form.append('language', options.language === 'eng' ? 'eng' : 'spa');
+      form.append('isOverlayRequired', 'false');
+      form.append('detectOrientation', 'true');
+      form.append('scale', 'true');
+      form.append('OCREngine', '2');
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+      let response;
+      try {
+        response = await fetch(OCR_SPACE_ENDPOINT, {
+          method: 'POST',
+          headers: { apikey: getOcrSpaceApiKey() },
+          body: form,
+          signal: controller.signal
+        });
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          throw new Error('OCR.Space excedió el tiempo máximo de respuesta.');
+        }
+        throw new Error('No se pudo conectar con OCR.Space. Verifica Internet.');
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (!response.ok) {
+        throw new Error(`OCR.Space respondió con HTTP ${response.status}.`);
+      }
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        throw new Error('OCR.Space devolvió una respuesta no válida.');
+      }
+
+      if (payload.IsErroredOnProcessing) {
+        const messages = Array.isArray(payload.ErrorMessage)
+          ? payload.ErrorMessage.join(' ')
+          : String(payload.ErrorMessage || payload.ErrorDetails || 'Error de procesamiento.');
+        throw new Error(messages);
+      }
+
+      const text = (payload.ParsedResults || [])
+        .map(item => String(item && item.ParsedText || ''))
+        .join('\n')
+        .trim();
+
+      if (!text) {
+        throw new Error('OCR.Space no devolvió texto reconocible.');
+      }
+
+      return {
+        data: { text },
+        engine: 'ocrspace',
+        language: options.language || 'spa'
+      };
+    }
+
+    async function getWorker() {
+      if (state.worker) return state.worker;
+
+      setStatus('Preparando OCR web de respaldo…', 3);
+      await ensureTesseractFallback();
+      if (!window.Tesseract) {
+        throw new Error(
+          'Tesseract.js no se cargó. Comprueba la conexión a Internet.'
+        );
+      }
+
+      setStatus('Cargando idioma español para OCR web de respaldo…', 4);
+      state.worker = await window.Tesseract.createWorker('spa', 1, {
+        logger: (message) => {
+          if (!state.busy || typeof message.progress !== 'number') return;
+          const context = state.ocrContext || { base: 8, span: 72, prefix: '' };
+          const labels = {
+            'loading tesseract core': 'Cargando núcleo OCR…',
+            'initializing tesseract': 'Inicializando OCR…',
+            'loading language traineddata': 'Cargando idioma español…',
+            'initializing api': 'Preparando reconocimiento…',
+            'recognizing text': 'Leyendo número de serie e impresiones…'
+          };
+          const label = labels[message.status] || 'Procesando documento…';
+          setStatus(`${context.prefix || ''}${label}`, context.base + message.progress * context.span);
+        },
+        errorHandler: (error) => console.error('OCR worker:', error)
+      });
+
+      await state.worker.setParameters({
+        tessedit_pageseg_mode: window.Tesseract.PSM.SINGLE_BLOCK,
+        preserve_interword_spaces: '1',
+        user_defined_dpi: '300'
+      });
+      return state.worker;
+    }
+
+    async function processItem(item, itemIndex = 0, totalItems = 1) {
+      const overallBase = 5 + (itemIndex / Math.max(1, totalItems)) * 90;
+      const overallSpan = 90 / Math.max(1, totalItems);
+
+      if (item.kind === 'pdf') {
+        try {
+          setStatus(`Leyendo texto del PDF: ${item.label}`, overallBase);
+          const pdfText = await extractPdfText(item);
+          const parsed = parseImpressions(pdfText, false);
+          if (parsed.foundCount >= 5 && parsed.serial && keywordScore(pdfText) >= 2) {
+            return {
+              angle: 0,
+              text: pdfText,
+              parsed,
+              score: parsed.foundCount * 20 + keywordScore(pdfText) + 25,
+              method: 'Texto interno del PDF'
+            };
+          }
+        } catch (error) {
+          console.warn('No se pudo usar el texto interno del PDF; se usará OCR.', error);
+        }
+      }
+
+      const source = await loadSource(item);
+      const attempts = uniqueAngles([item.rotation, item.rotation + 90, item.rotation - 90, item.rotation + 180]);
+      let best = null;
+
+      for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
+        const angle = attempts[attemptIndex];
+        const attemptBase = overallBase + (attemptIndex / attempts.length) * overallSpan;
+        const attemptSpan = overallSpan / attempts.length;
+        state.ocrContext = {
+          base: attemptBase,
+          span: attemptSpan,
+          prefix: totalItems > 1 ? `[${itemIndex + 1}/${totalItems}] ` : ''
+        };
+        setStatus(`${state.ocrContext.prefix}Probando orientación ${attemptIndex + 1} de ${attempts.length}: ${item.label}`, attemptBase);
+        const crop = getCropForOcr(source, angle);
+        const result = await recognizeCanvas(crop, { psm: 6 });
+        let text = result.data.text || '';
+        let parsed = parseImpressions(text);
+        let method = result.engine === 'native'
+          ? 'OCR nativo'
+          : result.engine === 'ocrspace'
+            ? 'OCR.Space'
+            : 'OCR web';
+
+        // Cuando los contadores contradicen la lógica del informe (por ejemplo,
+        // total menor que las hojas dúplex), se realiza una segunda lectura
+        // dedicada únicamente a la sección Impresiones. Esto evita falsos
+        // valores como 105 cuando el documento realmente indica 6241.
+        if (parsed.format !== 'simple_counter' && needsCounterRetry(parsed.values)) {
+          setStatus(`${state.ocrContext.prefix}Verificando exclusivamente la sección Impresiones…`, attemptBase + attemptSpan * 0.72);
+          const printOnly = getPrintCropForOcr(source, angle);
+          const retryResult = await recognizeCanvas(printOnly, { psm: 6 });
+          const retryText = retryResult.data.text || '';
+          const retryParsed = parseImpressions(retryText);
+          retryParsed.serial = parsed.serial || retryParsed.serial;
+          retryParsed.model = parsed.model || retryParsed.model;
+
+          if (counterResultScore(retryParsed, retryText) > counterResultScore(parsed, text)) {
+            parsed = retryParsed;
+            method = retryResult.engine === 'native'
+              ? 'OCR nativo + verificación de contadores'
+              : result.engine === 'ocrspace'
+                ? 'OCR.Space + verificación de contadores'
+                : 'OCR web + verificación de contadores';
+          }
+          if (retryText.trim()) {
+            text = `${text.trim()}\n\n--- OCR dedicado a la sección Impresiones ---\n${retryText.trim()}`;
+          }
+        }
+
+        // Si faltan la serie o el total, prueba la zona usada por hojas con
+        // encabezado "Counter", "Serial No." y una única fila "Total".
+        if (!parsed.serial || parsed.values.total === null) {
+          setStatus(
+            `${state.ocrContext.prefix}Verificando formato Counter (Serial No. / Total)…`,
+            attemptBase + attemptSpan * 0.84
+          );
+          const simpleCrop = getSimpleCounterCropForOcr(source, angle);
+          const simpleResult = await recognizeCanvas(simpleCrop, { psm: 6 });
+          const simpleText = simpleResult.data.text || '';
+          const simpleParsed = parseImpressions(simpleText);
+
+          const simpleScore =
+            counterResultScore(simpleParsed, simpleText) +
+            (simpleParsed.serial ? 35 : 0) +
+            (simpleParsed.values.total !== null ? 35 : 0) +
+            (simpleParsed.format === 'simple_counter' ? 40 : 0);
+
+          const currentScore =
+            counterResultScore(parsed, text) +
+            (parsed.serial ? 25 : 0);
+
+          if (simpleScore > currentScore) {
+            parsed = simpleParsed;
+            method = simpleResult.engine === 'native'
+              ? 'OCR nativo formato Counter'
+              : result.engine === 'ocrspace'
+                ? 'OCR.Space formato Counter'
+                : 'OCR web formato Counter';
+          }
+
+          if (simpleText.trim()) {
+            text = `${text.trim()}\n\n--- OCR formato Counter ---\n${simpleText.trim()}`;
+          }
+        }
+
+        const candidate = {
+          angle,
+          text,
+          parsed,
+          score: counterResultScore(parsed, text) + (parsed.serial ? 25 : 0),
+          method
+        };
+
+        if (!best || candidate.score > best.score) best = candidate;
+
+        const completeHp =
+          parsed.format !== 'simple_counter' &&
+          parsed.foundCount >= 5 &&
+          parsed.serial &&
+          keywordScore(text) >= 2;
+
+        const completeSimple =
+          parsed.format === 'simple_counter' &&
+          parsed.values.total !== null &&
+          parsed.serial;
+
+        if (completeHp || completeSimple) break;
+      }
+
+      if (!best) throw new Error('No hubo resultado OCR.');
+      return best;
+    }
+
+    async function scanCurrentDocument() {
+      if (state.busy) return;
+      if (state.currentIndex < 0) {
+        if (!state.queue.length) return;
+        await selectQueueItem(0);
+      }
+
+      const item = currentItem();
+      if (!item) return;
+      setBusy(true);
+      clearResultFields(false);
+      item.status = 'processing';
+      item.statusText = 'Procesando';
+      renderBatch();
+      $('confidenceBox').className = 'confidence warn';
+      $('confidenceBox').textContent = 'Analizando el documento…';
+
+      try {
+        const best = await processItem(item, 0, 1);
+        applyResultToItem(item, best);
+        state.rotation = item.rotation;
+        state.lastText = item.text;
+        $('equipmentId').value = item.equipment || '';
+        $('modelId').value = item.model || '';
+        fillResults(item.values);
+        $('rawText').textContent = item.text.trim() || 'El OCR no devolvió texto.';
+        showConfidence(item, best.method);
+        setStatus('Escaneo terminado. Revisa los valores detectados.', 100);
+      } catch (error) {
+        console.error(error);
+        markItemError(item, error);
+        $('confidenceBox').className = 'confidence warn';
+        $('confidenceBox').textContent = 'No fue posible extraer los valores de este documento.';
+        setStatus('Error al escanear el documento.', 0);
+        alert(error.message || 'No fue posible realizar el escaneo.');
+      } finally {
+        state.ocrContext = null;
+        setBusy(false);
+        renderBatch();
+        drawPreview();
+      }
+    }
+
+    async function scanAllDocuments() {
+      if (state.busy || !state.queue.length) return;
+      setBusy(true);
+      let success = 0;
+      let incomplete = 0;
+      let errors = 0;
+
+      try {
+        for (let index = 0; index < state.queue.length; index += 1) {
+          const item = state.queue[index];
+          item.status = 'processing';
+          item.statusText = 'Procesando';
+          item.error = '';
+          renderBatch();
+
+          try {
+            const best = await processItem(item, index, state.queue.length);
+            applyResultToItem(item, best);
+            if (item.status === 'ok') success += 1;
+            else incomplete += 1;
+          } catch (error) {
+            console.error(error);
+            markItemError(item, error);
+            errors += 1;
+          }
+          renderBatch();
+        }
+
+        const firstUseful = state.queue.findIndex((item) => item.status === 'ok' || item.status === 'incomplete');
+        if (firstUseful >= 0) await selectQueueItem(firstUseful, false);
+        setStatus(`Lote terminado: ${success} completos, ${incomplete} incompletos y ${errors} con error.`, 100);
+      } finally {
+        state.ocrContext = null;
+        setBusy(false);
+        renderBatch();
+      }
+    }
+
+    function applyResultToItem(item, best) {
+      item.rotation = best.angle;
+      item.text = best.text || '';
+      item.values = { ...emptyValues(), ...best.parsed.values };
+      item.foundCount = best.parsed.foundCount;
+      item.equipment = normalizeDocumentIdentifier(
+        best.parsed.serial || item.equipment || ''
+      );
+      if (item.equipment) renameQueueItemFromIdentifier(item, item.equipment);
+      item.model = best.parsed.model || item.model || '';
+      item.format = best.parsed.format || item.format || 'hp_configuration';
+      item.saved = false;
+      item.error = '';
+      setDerivedStatus(item, true);
+    }
+
+    function markItemError(item, error) {
+      item.status = 'error';
+      item.statusText = 'Error';
+      item.error = error && error.message ? error.message : 'Error desconocido';
+      item.foundCount = 0;
+      item.values = emptyValues();
+      item.saved = false;
+    }
+
+    function showConfidence(item, method = '') {
+      if (
+        item.format === 'simple_counter' &&
+        item.equipment &&
+        item.values &&
+        item.values.total !== null
+      ) {
+        $('confidenceBox').className = 'confidence good';
+        $('confidenceBox').textContent =
+          `Lectura satisfactoria del formato Counter: serie ${item.equipment} y total ${item.values.total}` +
+          `${method ? ` mediante ${method}` : ''}. Los contadores que no aparecen en esta hoja se dejan vacíos.`;
+      } else if (item.foundCount >= 5 && item.equipment) {
+        $('confidenceBox').className = 'confidence good';
+        $('confidenceBox').textContent = `Lectura satisfactoria: número de serie y ${item.foundCount} de 6 contadores detectados${method ? ` mediante ${method}` : ''}. Verifica especialmente los caracteres del número de serie antes de guardar.`;
+      } else {
+        $('confidenceBox').className = 'confidence warn';
+        const missingSerial = item.equipment ? '' : ' Falta el número de serie.';
+        $('confidenceBox').textContent = `Lectura incompleta: ${item.foundCount} de 6 contadores detectados.${missingSerial} Corrige manualmente los campos faltantes.`;
+      }
+    }
+
+    async function selectQueueItem(index, announce = true) {
+      if (index < 0 || index >= state.queue.length) return;
+      const item = state.queue[index];
+      state.currentIndex = index;
+      state.fileName = item.label;
+      state.rotation = item.rotation || 0;
+      state.lastText = item.text || '';
+      renderBatch();
+
+      try {
+        if (announce) setStatus(`Abriendo ${item.label}…`, 0);
+        state.image = await loadSource(item);
+        drawPreview();
+        $('equipmentId').value = item.equipment || '';
+        $('modelId').value = item.model || '';
+        if (item.readingDate) $('scanDate').value = item.readingDate;
+        fillResults(item.values || emptyValues());
+        $('rawText').textContent = item.text ? item.text : 'Sin texto reconocido.';
+        if (item.status === 'ok' || item.status === 'incomplete') showConfidence(item);
+        else {
+          $('confidenceBox').className = 'confidence warn';
+          $('confidenceBox').textContent = item.status === 'error' ? `Error: ${item.error || 'No se detectaron valores.'}` : 'Aún no se ha realizado un escaneo.';
+        }
+        if (announce) setStatus(`${item.label} listo para revisar o escanear.`, 0);
+      } catch (error) {
+        console.error(error);
+        state.image = null;
+        resetPreview();
+        markItemError(item, error);
+        renderBatch();
+        setStatus(`No fue posible abrir ${item.label}.`, 0);
+      }
+    }
+
+    function rotateCurrent(delta) {
+      const item = currentItem();
+      if (!item || !state.image) return;
+      item.rotation = normalizeAngle((item.rotation || 0) + delta);
+      state.rotation = item.rotation;
+      item.saved = false;
+      drawPreview();
+      renderBatch();
+    }
+
+    function currentItem() {
+      return state.currentIndex >= 0 ? state.queue[state.currentIndex] : null;
+    }
+
+    function uniqueAngles(angles) {
+      const seen = new Set();
+      return angles.map(normalizeAngle).filter((angle) => {
+        if (seen.has(angle)) return false;
+        seen.add(angle);
+        return true;
+      });
+    }
+
+    function normalizeText(text) {
+      return String(text || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[—–]/g, '-')
+        .replace(/[|]/g, 'i')
+        .replace(/\r/g, '\n');
+    }
+
+    function keywordScore(text) {
+      const t = normalizeText(text);
+      let score = 0;
+      if (t.includes('impres')) score += 1;
+      if (t.includes('equiv')) score += 1;
+      if (t.includes('atasc')) score += 1;
+      if (t.includes('econo')) score += 1;
+      if (t.includes('ambas') || t.includes('caras')) score += 1;
+      if (t.includes('counter')) score += 2;
+      if (t.includes('serial no') || t.includes('serial number')) score += 2;
+      if (/\btotal\b/.test(t)) score += 1;
+      return score;
+    }
+
+    function extractImpressionsSectionLines(lines) {
+      const headingIndex = lines.findIndex((line) => /^impresiones?[\s:._-]*$/.test(line));
+      if (headingIndex >= 0) return lines.slice(headingIndex, headingIndex + 14);
+
+      const relevantIndexes = [];
+      lines.forEach((line, index) => {
+        if (
+          (line.includes('total') && line.includes('impres')) ||
+          line.includes('equiv') || line.includes('a4') ||
+          line.includes('atasc') || line.includes('econo') ||
+          ((line.includes('hoja') || line.includes('hojas')) && (line.includes('ambas') || line.includes('cara'))) ||
+          (line.includes('aliment') && (line.includes('evento') || line.includes('pag')))
+        ) relevantIndexes.push(index);
+      });
+
+      if (!relevantIndexes.length) return lines;
+      const first = Math.max(0, Math.min(...relevantIndexes) - 1);
+      const last = Math.min(lines.length, Math.max(...relevantIndexes) + 2);
+      return lines.slice(first, last);
+    }
+
+    function parseImpressions(text, allowOrderedFallback = true) {
+      const normalized = normalizeText(text);
+      const allLines = normalized
+        .split(/\n+/)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+      const hasCounterHeading = allLines.some((line) => /^counter\b/.test(line));
+      const hasSerialNoLabel = /\bserial\s*(?:no\.?|number)\b/.test(normalized);
+      const hasTodayLabel = /\b(?:data|date)\s+of\s+today\b/.test(normalized);
+      const hasTotalLabel = allLines.some((line) => /^total\b/.test(line));
+      const simpleCounterFormat = hasCounterHeading ||
+        (hasSerialNoLabel && hasTodayLabel && hasTotalLabel);
+
+      const lines = simpleCounterFormat
+        ? allLines
+        : extractImpressionsSectionLines(allLines);
+
+      const values = emptyValues();
+
+      // Formato Counter: contiene únicamente Serial No., Date/Data of Today y Total.
+      // El valor puede aparecer en la misma línea que "Total" o en una línea posterior
+      // de la misma fila. No se deben ejecutar clasificadores ni fórmulas del informe HP.
+      if (simpleCounterFormat) {
+        for (let index = 0; index < lines.length; index += 1) {
+          if (!/^total\b/.test(lines[index])) continue;
+
+          const sameLineNumber = extractTrailingNumber(lines[index]);
+          if (sameLineNumber !== null) {
+            values.total = sameLineNumber;
+            break;
+          }
+
+          for (let offset = 1; offset <= 3 && index + offset < lines.length; offset += 1) {
+            const followingLine = lines[index + offset];
+            if (/^(?:serial|data|date|counter)\b/.test(followingLine)) break;
+            const followingNumber = extractTrailingNumber(followingLine);
+            if (followingNumber !== null) {
+              values.total = followingNumber;
+              break;
+            }
+          }
+          break;
+        }
+
+        const serial = parseSerialNumber(text);
+        return {
+          values,
+          foundCount: values.total === null ? 0 : 1,
+          serial,
+          model: '',
+          format: 'simple_counter'
+        };
+      }
+
+      const classifiers = [
+        {
+          key: 'equivalent',
+          match: (line) => hasAll(line, ['total', 'impres']) && (line.includes('equiv') || line.includes('a4') || line.includes('carta'))
+        },
+        {
+          key: 'total',
+          match: (line) => hasAll(line, ['total', 'impres']) && !line.includes('equiv') && !line.includes('a4') && !line.includes('carta')
+        },
+        {
+          key: 'duplex',
+          match: (line) => (line.includes('hoja') || line.includes('hojas')) && (line.includes('ambas') || line.includes('cara'))
+        },
+        {
+          key: 'jams',
+          match: (line) => line.includes('evento') && (line.includes('atasc') || line.includes('atasco'))
+        },
+        {
+          key: 'misfeeds',
+          match: (line) => (line.includes('evento') || line.includes('pag')) && (line.includes('aliment') || line.includes('mal alim'))
+        },
+        {
+          key: 'economode',
+          match: (line) => line.includes('econo') || (line.includes('impres') && line.includes('eco'))
+        }
+      ];
+
+      for (const line of lines) {
+        for (const classifier of classifiers) {
+          if (values[classifier.key] !== null || !classifier.match(line)) continue;
+          const number = extractTrailingNumber(line);
+          if (number !== null) values[classifier.key] = number;
+        }
+      }
+
+      for (let i = 0; i < lines.length - 1; i += 1) {
+        const pair = `${lines[i]} ${lines[i + 1]}`;
+        for (const classifier of classifiers) {
+          if (values[classifier.key] !== null || !classifier.match(pair)) continue;
+          const number = extractTrailingNumber(pair);
+          if (number !== null) values[classifier.key] = number;
+        }
+      }
+
+      if (allowOrderedFallback) {
+        const orderedNumbers = lines
+          .filter((line) => !/^impresiones?\s*$/.test(line))
+          .map(extractTrailingNumber)
+          .filter((number) => number !== null);
+
+        const order = ['total', 'equivalent', 'duplex', 'jams', 'misfeeds', 'economode'];
+        if (orderedNumbers.length >= 6) {
+          order.forEach((key, index) => {
+            if (values[key] === null) values[key] = orderedNumbers[index];
+          });
+        }
+      }
+
+      repairCounterValues(values, lines);
+      const foundCount = Object.values(values).filter((value) => value !== null).length;
+      const serial = parseSerialNumber(text);
+      const model = parseProductModel(text);
+      const format = simpleCounterFormat && values.total !== null
+        ? 'simple_counter'
+        : 'hp_configuration';
+      return { values, foundCount, serial, model, format };
+    }
+
+    function extractAllNumbers(line) {
+      const matches = String(line || '').match(/[0-9oOilIsS]+(?:[.,][0-9oOilIsS]+)?/g) || [];
+      return matches
+        .filter((token) => /[0-9]/.test(token))
+        .map(parseOcrNumber)
+        .filter((value) => value !== null);
+    }
+
+    function repairCounterValues(values, lines) {
+      const total = values.total;
+      const equivalent = values.equivalent;
+      const duplex = values.duplex;
+      const minimum = Math.max(0, duplex || 0, values.jams || 0, values.misfeeds || 0, values.economode || 0);
+      const totalLooksWrong = total === null ||
+        (duplex !== null && total < duplex) ||
+        (equivalent !== null && total > equivalent);
+
+      if (!totalLooksWrong) return;
+
+      const candidates = [];
+      lines.forEach((line, lineIndex) => {
+        const normalized = normalizeText(line);
+        extractAllNumbers(line).forEach((number) => {
+          if (!Number.isInteger(number)) return;
+          if (number < minimum) return;
+          if (equivalent !== null && number > equivalent) return;
+          if (duplex !== null && number === duplex) return;
+          if (number === values.jams || number === values.misfeeds || number === values.economode) return;
+
+          let score = number > minimum ? 10 : 0;
+          if (normalized.includes('total') && normalized.includes('impres') &&
+              !normalized.includes('equiv') && !normalized.includes('a4') && !normalized.includes('carta')) score += 100;
+          if (lineIndex <= 3) score += 4;
+          if (equivalent !== null && number < equivalent) score += 8;
+          candidates.push({ number, score });
+        });
+      });
+
+      candidates.sort((a, b) => b.score - a.score || b.number - a.number);
+      if (candidates.length) values.total = candidates[0].number;
+    }
+
+    function counterConsistencyScore(values) {
+      let score = 0;
+      const { total, equivalent, duplex, jams, misfeeds, economode } = values || emptyValues();
+      if (total !== null && equivalent !== null) score += equivalent >= total ? 30 : -60;
+      if (total !== null && duplex !== null) score += total >= duplex ? 30 : -60;
+      [jams, misfeeds, economode].forEach((value) => {
+        if (total !== null && value !== null) score += total >= value ? 4 : -12;
+      });
+      return score;
+    }
+
+    function needsCounterRetry(values) {
+      if (!values) return true;
+      if (values.total === null || values.equivalent === null) return true;
+      if (values.duplex !== null && values.total < values.duplex) return true;
+      if (values.total > values.equivalent) return true;
+      return false;
+    }
+
+    function counterResultScore(parsed, text) {
+      return (parsed.foundCount || 0) * 20 + keywordScore(text) + counterConsistencyScore(parsed.values);
+    }
+
+    function parseProductModel(text) {
+      const originalLines = String(text || '')
+        .replace(/\r/g, '\n')
+        .split(/\n+/)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+
+      const labelPatterns = [
+        /nombre\s+de\s+producto/i,
+        /nombre\s+producto/i,
+        /descrip(?:cion)?\.?\s*(?:del\s*)?disp(?:ositivo)?\.?/i,
+        /product\s+name/i,
+        /device\s+description/i
+      ];
+
+      for (let index = 0; index < originalLines.length; index += 1) {
+        const line = originalLines[index];
+        const pattern = labelPatterns.find((candidate) => candidate.test(normalizeText(line)));
+        if (!pattern) continue;
+
+        let value = line;
+        const colon = value.indexOf(':');
+        if (colon >= 0) {
+          value = value.slice(colon + 1);
+        } else {
+          value = value.replace(pattern, '');
+        }
+        value = cleanProductModel(value);
+        if (!value && index + 1 < originalLines.length) {
+          value = cleanProductModel(originalLines[index + 1]);
+        }
+        if (value) return value;
+      }
+      return '';
+    }
+
+    function cleanProductModel(value) {
+      let model = String(value || '')
+        .replace(/^[\s:=._-]+/, '')
+        .replace(/\s+/g, ' ')
+        .replace(/[\s:;,.|-]+$/, '')
+        .trim();
+
+      // El OCR puede unir al modelo la siguiente etiqueta del reporte:
+      // "HP LaserJet Pro M501dn Descr. disp.: ..." o incluso solo "Descr".
+      // Se corta el texto al inicio de cualquier etiqueta conocida.
+      const followingLabels = new RegExp(
+        String.raw`\s+(?:` +
+        String.raw`descr(?:ip(?:ci[oó]n)?)?\.?(?:\s+(?:del\s+)?disp(?:ositivo)?\.?)?` +
+        String.raw`|descrip(?:ci[oó]n)?\.?(?:\s+(?:del\s+)?disp(?:ositivo)?\.?)?` +
+        String.raw`|n[úu]mero\s+(?:de\s+)?formateador` +
+        String.raw`|n[úu]mero\s+de\s+serie` +
+        String.raw`|serial\s+(?:number|no\.?)` +
+        String.raw`|idioma` +
+        String.raw`|configuraci[oó]n` +
+        String.raw`|[ií]ndice\s+de\s+los\s+cartuchos` +
+        String.raw`|id\s+servicio` +
+        String.raw`|c[oó]digo\s+fecha\s+firmware` +
+        String.raw`|versi[oó]n\s+del\s+panel` +
+        String.raw`|zona` +
+        String.raw`|ubicaci[oó]n\s+del\s+dispositivo` +
+        String.raw`)\b`,
+        'i'
+      );
+      model = model.split(followingLabels)[0].trim();
+
+      // Protección adicional para OCR truncado exactamente en "Descr".
+      model = model
+        .replace(/\s+(?:descr|descrip|descripci[oó]n)\.?$/i, '')
+        .replace(/[\s:;,.|-]+$/, '')
+        .trim();
+
+      if (model.length < 2 || model.length > 80) return '';
+      if (
+        /^(?:producto|dispositivo|impresiones|configuraci[oó]n|descr(?:ip(?:ci[oó]n)?)?)$/i
+          .test(model)
+      ) return '';
+      return model;
+    }
+
+    function parseSerialNumber(text) {
+      const originalLines = String(text || '')
+        .replace(/\r/g, '\n')
+        .split(/\n+/)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+
+      const candidates = [];
+      for (let index = 0; index < originalLines.length; index += 1) {
+        const line = originalLines[index];
+        const normalized = normalizeText(line);
+        const hasSpanishLabel = normalized.includes('numero') &&
+          (normalized.includes('serie') || normalized.includes('serle'));
+        const isSerialLabel =
+          hasSpanishLabel ||
+          normalized.includes('num. de serie') ||
+          normalized.includes('num de serie') ||
+          normalized.includes('serial number') ||
+          normalized.startsWith('serial no') ||
+          normalized.startsWith('serial:');
+        if (!isSerialLabel) continue;
+
+        candidates.push(line);
+        if (index + 1 < originalLines.length) candidates.push(`${line} ${originalLines[index + 1]}`);
+      }
+
+      for (const candidate of candidates) {
+        const serial = extractSerialCandidate(candidate);
+        if (serial) return serial;
+      }
+      return '';
+    }
+
+    function extractSerialCandidate(line) {
+      let candidate = String(line || '').toUpperCase();
+      const labelPattern = /(?:N[ÚU]M(?:ERO)?\.?\s*(?:DE\s*)?SER(?:IE|LE)|SERIAL\s*(?:NUMBER|NO\.?)?)/i;
+      const labelMatch = candidate.match(labelPattern);
+      if (labelMatch && labelMatch.index !== undefined) {
+        candidate = candidate.slice(labelMatch.index + labelMatch[0].length);
+      }
+      candidate = candidate.replace(/^\s*[:=.-]+\s*/, ' ');
+
+      const tokens = candidate.match(/[A-Z0-9][A-Z0-9-]{5,24}/g) || [];
+      const valid = tokens
+        .map((token) => token.replace(/^-+|-+$/g, ''))
+        .filter((token) => token.length >= 7 && token.length <= 20)
+        .filter((token) => /[A-Z]/.test(token) && /[0-9]/.test(token))
+        .filter((token) => !/^(?:FIRMWARE|PRODUCTO|LASERJET|M501DN|IMPRESIONES)$/i.test(token));
+
+      if (!valid.length) return '';
+      return valid[0];
+    }
+
+    function hasAll(text, fragments) {
+      return fragments.every((fragment) => text.includes(fragment));
+    }
+
+    function extractTrailingNumber(line) {
+      let candidate = line;
+      const colon = line.lastIndexOf(':');
+      const hasColonValue = colon >= 0 && colon < line.length - 1;
+      if (hasColonValue) candidate = line.slice(colon + 1);
+
+      const rawMatches = candidate.match(/[0-9oOilIsS]+(?:[.,][0-9oOilIsS]+)?/g) || [];
+      const matches = rawMatches.filter((token) =>
+        /[0-9]/.test(token) || (hasColonValue && /^[oOilIsS]{1,3}$/.test(token))
+      );
+      if (matches.length) return parseOcrNumber(matches[matches.length - 1]);
+
+      const wholeMatches = (line.match(/[0-9oOilIsS]+(?:[.,][0-9oOilIsS]+)?(?=\s*$)/g) || [])
+        .filter((token) => /[0-9]/.test(token));
+      if (!wholeMatches.length) return null;
+      return parseOcrNumber(wholeMatches[wholeMatches.length - 1]);
+    }
+
+    function parseOcrNumber(raw) {
+      const cleaned = String(raw)
+        .replace(/[oO]/g, '0')
+        .replace(/[iIlL|]/g, '1')
+        .replace(/[sS]/g, '5')
+        .replace(',', '.')
+        .replace(/[^0-9.]/g, '');
+      if (!cleaned || !/^\d+(?:\.\d+)?$/.test(cleaned)) return null;
+      const number = Number(cleaned);
+      return Number.isFinite(number) && number >= 0 ? number : null;
+    }
+
+    function setDefaultDate() {
+      const now = new Date();
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      $('scanDate').value = local.toISOString().slice(0, 16);
+    }
+
+    function calculateRoundedDifference(total, equivalent) {
+      return null;
+    }
+
+    function updateCalculatedDifference() {
+      $('calculatedDifference').value = '';
+    }
+
+    function fillResults(values) {
+      Object.entries(fields).forEach(([key, input]) => {
+        input.value = values && values[key] !== null && values[key] !== undefined ? values[key] : '';
+      });
+      updateCalculatedDifference();
+    }
+
+    function clearResultFields(resetDate) {
+      Object.values(fields).forEach((input) => { input.value = ''; });
+      updateCalculatedDifference();
+      const item = currentItem();
+      if (item) {
+        item.values = emptyValues();
+        item.saved = false;
+        item.error = '';
+      }
+      if (resetDate) {
+        $('equipmentId').value = '';
+        $('modelId').value = '';
+        if (item) {
+          item.equipment = '';
+          item.model = '';
+        }
+        setDefaultDate();
+        $('rawText').textContent = 'Sin texto reconocido.';
+        $('confidenceBox').className = 'confidence warn';
+        $('confidenceBox').textContent = 'Campos limpiados. Puedes escribir manualmente el número de serie y los contadores.';
+      }
+      if (item) {
+        setDerivedStatus(item);
+        renderBatch();
+      }
+    }
+
+    function currentValues() {
+      const read = (input) => input.value === '' ? null : Number(input.value);
+      return {
+        total: read(fields.total),
+        equivalent: read(fields.equivalent),
+        duplex: read(fields.duplex),
+        jams: read(fields.jams),
+        misfeeds: read(fields.misfeeds),
+        economode: read(fields.economode)
+      };
+    }
+
+    function createRecordFromItem(item, values, dateValue, equipment) {
+      return {
+        id: makeId(),
+        date: dateValue || new Date().toISOString(),
+        equipment: equipment || '',
+        model: item ? (item.model || '') : $('modelId').value.trim(),
+        file: item ? item.label : state.fileName,
+        format: item ? (item.format || 'hp_configuration') : '',
+        ...values
+      };
+    }
+
+    async function saveRecord() {
+      const values = currentValues();
+      if (values.total === null) {
+        alert('El campo “Total de impresiones” es obligatorio.');
+        fields.total.focus();
+        return;
+      }
+      const identifier = normalizeDocumentIdentifier($('equipmentId').value);
+      if (!identifier) {
+        alert('El número de serie es obligatorio para identificar el origen del contador.');
+        $('equipmentId').focus();
+        return;
+      }
+      $('equipmentId').value = identifier;
+
+      const item = currentItem();
+      if (item) {
+        item.values = { ...values };
+        item.equipment = identifier;
+        renameQueueItemFromIdentifier(item, identifier);
+        item.model = $('modelId').value.trim();
+        item.readingDate = $('scanDate').value;
+        item.saved = true;
+      }
+
+      const record = createRecordFromItem(
+        item,
+        values,
+        $('scanDate').value,
+        identifier
+      );
+      state.history.unshift(record);
+      persistHistory();
+      renderHistory();
+      renderBatch();
+
+      const stored = await saveRecordsToDatabase([record]);
+      setStatus(
+        stored
+          ? 'Registro guardado en la base de datos común.'
+          : 'Registro guardado localmente; la base común no respondió.',
+        100
+      );
+    }
+
+    async function saveBatchRecords() {
+      const ready = state.queue.filter((item) => item.values.total !== null && item.equipment.trim() && !item.saved);
+      if (!ready.length) {
+        alert('No hay resultados nuevos que tengan tanto número de serie como “Total de impresiones”.');
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const records = ready.map((item) => {
+        item.saved = true;
+        return createRecordFromItem(
+          item,
+          item.values,
+          item.readingDate || now,
+          item.equipment
+        );
+      });
+      state.history.unshift(...records);
+      persistHistory();
+      renderHistory();
+      renderBatch();
+
+      const stored = await saveRecordsToDatabase(records);
+      setStatus(
+        stored
+          ? `${records.length} registro(s) guardado(s) en la base común.`
+          : `${records.length} registro(s) guardado(s) localmente; la base común no respondió.`,
+        100
+      );
+    }
+
+    async function copyValues() {
+      const values = currentValues();
+      const text = [
+        `Número de serie: ${$('equipmentId').value.trim()}`,
+        `Modelo: ${$('modelId').value.trim()}`,
+        `Total de impresiones: ${displayValue(values.total)}`,
+        `Impresiones tamaño oficio: `,
+        `Impresiones tamaño carta: ${displayValue(values.equivalent)}`,
+        `Hojas a ambas caras: ${displayValue(values.duplex)}`,
+        `Eventos de atasco: ${displayValue(values.jams)}`,
+        `Eventos de páginas mal alimentadas: ${displayValue(values.misfeeds)}`,
+        `Impresiones Economode: ${displayValue(values.economode)}`
+      ].join('\n');
+
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus('Valores copiados al portapapeles.', 100);
+      } catch {
+        const area = document.createElement('textarea');
+        area.value = text;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+        setStatus('Valores copiados al portapapeles.', 100);
+      }
+    }
+
+    function displayValue(value) {
+      return value === null || value === undefined ? '' : String(value);
+    }
+
+    function counterReviewNumber(id) {
+      const value = $(id).value;
+      if (value === '') return null;
+      const number = Number(value);
+      return Number.isFinite(number) && number >= 0 ? number : null;
+    }
+
+    function updateCounterReviewDifference() {
+      $('counterReviewLetter').value = '';
+    }
+
+    function fillCounterReviewFields(item) {
+      $('counterReviewSerial').value = item.equipment || '';
+      $('counterReviewModel').value = item.model || '';
+      $('counterReviewDate').value =
+        item.readingDate || $('scanDate').value || '';
+      $('counterReviewTotal').value =
+        displayValue(item.values.total);
+      $('counterReviewEquivalent').value =
+        displayValue(item.values.equivalent);
+      $('counterReviewDuplex').value =
+        displayValue(item.values.duplex);
+      $('counterReviewJams').value =
+        displayValue(item.values.jams);
+      $('counterReviewMisfeeds').value =
+        displayValue(item.values.misfeeds);
+      $('counterReviewEconomode').value =
+        displayValue(item.values.economode);
+      $('counterReviewRaw').textContent =
+        item.text || 'Sin texto reconocido.';
+      updateCounterReviewDifference();
+
+      const formatText =
+        item.format === 'simple_counter'
+          ? 'Formato Counter'
+          : 'Informe de configuración';
+      $('counterReviewStatus').textContent =
+        `${item.statusText} · ${formatText} · ` +
+        `${item.foundCount || 0} contador(es) detectado(s).`;
+    }
+
+    async function openCounterReview(index) {
+      if (
+        state.busy ||
+        index < 0 ||
+        index >= state.queue.length
+      ) return;
+
+      counterReview.index = index;
+      counterReview.rotation =
+        state.queue[index].rotation || 0;
+      counterReview.zoom = 1;
+      counterReview.source = null;
+      counterReview.oriented = null;
+      counterReview.token += 1;
+      const token = counterReview.token;
+
+      state.currentIndex = index;
+      renderBatch();
+
+      const item = state.queue[index];
+      $('counterReviewFile').textContent = item.label;
+      $('counterReviewPosition').textContent =
+        `${index + 1} de ${state.queue.length}`;
+      $('counterReviewPrevious').disabled = index <= 0;
+      $('counterReviewNext').disabled =
+        index >= state.queue.length - 1;
+      $('counterReviewApplyNext').textContent =
+        index < state.queue.length - 1
+          ? 'Aplicar y revisar siguiente'
+          : 'Aplicar y cerrar';
+
+      fillCounterReviewFields(item);
+      $('counterReviewLoading').hidden = false;
+      $('counterReviewModal').hidden = false;
+      document.body.classList.add('counter-review-open');
+
+      try {
+        counterReview.source =
+          item.kind === 'pdf'
+            ? await renderPdfPage(item, 4300)
+            : await fileToImage(item.file);
+
+        if (
+          token !== counterReview.token ||
+          counterReview.index !== index
+        ) return;
+
+        state.image = counterReview.source;
+        state.rotation = item.rotation || 0;
+        drawPreview();
+        renderCounterReviewOrientation();
+        requestAnimationFrame(fitCounterReview);
+      } catch (error) {
+        console.error(error);
+        $('counterReviewStatus').textContent =
+          `No fue posible abrir el documento: ${error.message || error}`;
+      } finally {
+        if (token === counterReview.token) {
+          $('counterReviewLoading').hidden = true;
+        }
+      }
+    }
+
+    function renderCounterReviewOrientation() {
+      if (!counterReview.source) return;
+
+      counterReview.oriented = orientedCanvas(
+        counterReview.source,
+        counterReview.rotation,
+        4300
+      );
+
+      const canvas = $('counterReviewCanvas');
+      canvas.width = counterReview.oriented.width;
+      canvas.height = counterReview.oriented.height;
+      const context = canvas.getContext('2d', { alpha: false });
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(counterReview.oriented, 0, 0);
+      drawCounterReviewSize();
+    }
+
+    function drawCounterReviewSize() {
+      if (!counterReview.oriented) return;
+      const canvas = $('counterReviewCanvas');
+      canvas.style.width =
+        `${Math.max(1, Math.round(counterReview.oriented.width * counterReview.zoom))}px`;
+      canvas.style.height =
+        `${Math.max(1, Math.round(counterReview.oriented.height * counterReview.zoom))}px`;
+      $('counterReviewZoomLabel').textContent =
+        `${Math.round(counterReview.zoom * 100)}%`;
+    }
+
+    function fitCounterReview() {
+      if (!counterReview.oriented) return;
+      const scroll = $('counterReviewScroll');
+      const available =
+        Math.max(320, scroll.clientWidth - 42);
+      counterReview.zoom = Math.max(
+        0.12,
+        Math.min(1.15, available / counterReview.oriented.width)
+      );
+      drawCounterReviewSize();
+      scroll.scrollTop = 0;
+      scroll.scrollLeft = 0;
+    }
+
+    function changeCounterReviewZoom(delta) {
+      if (!counterReview.oriented) return;
+      counterReview.zoom = Math.max(
+        0.12,
+        Math.min(2.5, counterReview.zoom + delta)
+      );
+      drawCounterReviewSize();
+    }
+
+    function rotateCounterReview(delta) {
+      if (!counterReview.source) return;
+      counterReview.rotation = normalizeAngle(
+        counterReview.rotation + delta
+      );
+      renderCounterReviewOrientation();
+      fitCounterReview();
+    }
+
+    function applyCounterReview(closeAfter = true) {
+      const index = counterReview.index;
+      if (index < 0 || index >= state.queue.length) return false;
+
+      const item = state.queue[index];
+      const identifier = normalizeDocumentIdentifier(
+        $('counterReviewSerial').value
+      );
+      if (!identifier) {
+        alert('El número de serie es obligatorio.');
+        $('counterReviewSerial').focus();
+        return false;
+      }
+      $('counterReviewSerial').value = identifier;
+      item.equipment = identifier;
+      renameQueueItemFromIdentifier(item, identifier);
+      $('counterReviewFile').textContent = item.label;
+
+      item.model = $('counterReviewModel').value.trim();
+      item.readingDate = $('counterReviewDate').value;
+      item.rotation = counterReview.rotation;
+      item.values = {
+        total: counterReviewNumber('counterReviewTotal'),
+        equivalent: counterReviewNumber('counterReviewEquivalent'),
+        duplex: counterReviewNumber('counterReviewDuplex'),
+        jams: counterReviewNumber('counterReviewJams'),
+        misfeeds: counterReviewNumber('counterReviewMisfeeds'),
+        economode: counterReviewNumber('counterReviewEconomode')
+      };
+      item.saved = false;
+      item.error = '';
+      setDerivedStatus(item);
+
+      state.currentIndex = index;
+      state.rotation = item.rotation;
+      if (counterReview.source) {
+        state.image = counterReview.source;
+      }
+      $('equipmentId').value = item.equipment;
+      $('modelId').value = item.model;
+      if (item.readingDate) {
+        $('scanDate').value = item.readingDate;
+      }
+      fillResults(item.values);
+      $('rawText').textContent =
+        item.text || 'Sin texto reconocido.';
+      showConfidence(item);
+      drawPreview();
+      renderBatch();
+      setStatus(
+        `Correcciones aplicadas a ${item.label}.`,
+        100
+      );
+
+      if (closeAfter) closeCounterReview();
+      return true;
+    }
+
+    async function moveCounterReview(delta) {
+      const next = counterReview.index + delta;
+      if (next < 0 || next >= state.queue.length) return;
+      applyCounterReview(false);
+      await openCounterReview(next);
+    }
+
+    async function applyCounterReviewAndNext() {
+      const current = counterReview.index;
+      if (!applyCounterReview(false)) return;
+
+      if (current < state.queue.length - 1) {
+        await openCounterReview(current + 1);
+      } else {
+        closeCounterReview();
+      }
+    }
+
+    function closeCounterReview() {
+      counterReview.token += 1;
+      counterReview.index = -1;
+      counterReview.source = null;
+      counterReview.oriented = null;
+      $('counterReviewModal').hidden = true;
+      $('counterReviewLoading').hidden = true;
+      document.body.classList.remove('counter-review-open');
+    }
+
+    function commitBatchSerialEdit(index, input) {
+      if (index < 0 || index >= state.queue.length) return;
+
+      const item = state.queue[index];
+      const identifier = normalizeDocumentIdentifier(input.value);
+      input.value = identifier;
+      item.equipment = identifier;
+      if (identifier) renameQueueItemFromIdentifier(item, identifier);
+      item.saved = false;
+      item.error = '';
+      setDerivedStatus(item);
+
+      if (index === state.currentIndex) {
+        $('equipmentId').value = identifier;
+      }
+      if (index === counterReview.index && !$('counterReviewModal').hidden) {
+        $('counterReviewSerial').value = identifier;
+        $('counterReviewFile').textContent = item.label;
+      }
+
+      renderBatch();
+    }
+
+    function renderBatch() {
+      const body = $('batchBody');
+      body.innerHTML = '';
+      $('queueCount').textContent = `${state.queue.length} ${state.queue.length === 1 ? 'documento' : 'documentos'}`;
+
+      if (!state.queue.length) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 12;
+        cell.className = 'empty-row';
+        cell.textContent = 'El lote está vacío. Agrega archivos o selecciona una carpeta completa.';
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+
+      state.queue.forEach((item, index) => {
+        const row = document.createElement('tr');
+        if (index === state.currentIndex) row.classList.add('selected-row');
+
+        const fileCell = document.createElement('td');
+        fileCell.textContent = item.label;
+        fileCell.title = item.label;
+        row.appendChild(fileCell);
+
+        const statusCell = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = `status-badge ${item.status}`;
+        badge.textContent = item.saved ? `${item.statusText} · guardado` : item.statusText;
+        if (item.error) badge.title = item.error;
+        statusCell.appendChild(badge);
+
+        const statusTools = document.createElement('div');
+        statusTools.className = 'status-review-tools';
+        const viewDocument = document.createElement('button');
+        viewDocument.type = 'button';
+        viewDocument.className = 'mini-btn secondary';
+        viewDocument.textContent = item.kind === 'pdf' ? 'Ver PDF' : 'Ver imagen';
+        viewDocument.title = 'Abrir el documento y corregir el número de serie o los contadores';
+        viewDocument.disabled = state.busy;
+        viewDocument.addEventListener('click', () => openCounterReview(index));
+        statusTools.appendChild(viewDocument);
+        statusCell.appendChild(statusTools);
+        row.appendChild(statusCell);
+
+        const serialCell = document.createElement('td');
+        const serialInput = document.createElement('input');
+        serialInput.type = 'text';
+        serialInput.className = 'batch-serial-input';
+        serialInput.value = item.equipment || '';
+        serialInput.autocomplete = 'off';
+        serialInput.spellcheck = false;
+        serialInput.disabled = state.busy;
+        serialInput.setAttribute('aria-label', `Número de serie de ${item.label}`);
+        serialInput.title = 'Editar el número de serie directamente en el lote';
+        serialInput.addEventListener('change', () => {
+          commitBatchSerialEdit(index, serialInput);
+        });
+        serialInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            serialInput.blur();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            serialInput.value = item.equipment || '';
+            serialInput.blur();
+          }
+        });
+        serialCell.appendChild(serialInput);
+        row.appendChild(serialCell);
+
+        const modelCell = document.createElement('td');
+        modelCell.textContent = item.model || '';
+        row.appendChild(modelCell);
+
+        const totalCell = document.createElement('td');
+        totalCell.className = 'num';
+        totalCell.textContent = displayValue(item.values.total);
+        row.appendChild(totalCell);
+
+        const officeCell = document.createElement('td');
+        officeCell.className = 'num';
+        officeCell.textContent = '';
+        row.appendChild(officeCell);
+
+        const letterCell = document.createElement('td');
+        letterCell.className = 'num';
+        letterCell.textContent = displayValue(item.values.equivalent);
+        row.appendChild(letterCell);
+
+        ['duplex', 'jams', 'misfeeds', 'economode'].forEach((key) => {
+          const cell = document.createElement('td');
+          cell.className = 'num';
+          cell.textContent = displayValue(item.values[key]);
+          row.appendChild(cell);
+        });
+
+        const action = document.createElement('td');
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'mini-btn danger';
+        remove.textContent = 'Quitar';
+        remove.disabled = state.busy;
+        remove.addEventListener('click', () => removeQueueItem(index));
+        action.appendChild(remove);
+        row.appendChild(action);
+        body.appendChild(row);
+      });
+    }
+
+    async function removeQueueItem(index) {
+      if (state.busy || index < 0 || index >= state.queue.length) return;
+      state.queue.splice(index, 1);
+      if (!state.queue.length) {
+        state.currentIndex = -1;
+        state.image = null;
+        state.fileName = '';
+        resetPreview();
+        clearResultFields(true);
+      } else {
+        const nextIndex = Math.min(index, state.queue.length - 1);
+        await selectQueueItem(nextIndex);
+      }
+      renderBatch();
+    }
+
+    function clearQueue() {
+      if (state.busy || !state.queue.length) return;
+      if (!confirm('¿Vaciar el lote actual? El historial guardado no se borrará.')) return;
+      state.queue = [];
+      state.currentIndex = -1;
+      state.image = null;
+      state.fileName = '';
+      state.rotation = 0;
+      state.lastText = '';
+      state.pdfCache.clear();
+      resetPreview();
+      clearResultFields(true);
+      renderBatch();
+      setStatus('Lote vacío. Esperando archivos.', 0);
+    }
+
+    function loadHistory() {
+      try {
+        const current = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        if (Array.isArray(current)) return current;
+        const old = JSON.parse(localStorage.getItem('hp_impresiones_scans_v1') || '[]');
+        return Array.isArray(old) ? old : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function persistHistory() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.history));
+    }
+
+    function renderHistory() {
+      const body = $('historyBody');
+      body.innerHTML = '';
+      $('recordCount').textContent = `${state.history.length} ${state.history.length === 1 ? 'registro' : 'registros'}`;
+
+      if (!state.history.length) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 12;
+        cell.className = 'empty-row';
+        cell.textContent = 'No hay registros guardados.';
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+
+      const groups = new Map();
+      for (const record of state.history) {
+        const groupKey = historyDateKey(record.date);
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey).push(record);
+      }
+
+      let groupIndex = 0;
+      for (const [groupKey, records] of groups) {
+        const groupId = `history-date-${groupIndex}`;
+        const initiallyOpen = groupIndex === 0;
+
+        const headerRow = document.createElement('tr');
+        headerRow.className = 'history-date-row';
+        const headerCell = document.createElement('td');
+        headerCell.colSpan = 12;
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'history-date-toggle';
+        toggle.setAttribute('aria-expanded', initiallyOpen ? 'true' : 'false');
+        toggle.setAttribute('aria-controls', groupId);
+
+        const label = document.createElement('span');
+        label.textContent = `${historyDateLabel(groupKey)} · ${records.length} ${records.length === 1 ? 'registro' : 'registros'}`;
+        const arrow = document.createElement('span');
+        arrow.className = 'history-arrow';
+        arrow.textContent = '▼';
+        toggle.append(label, arrow);
+        headerCell.appendChild(toggle);
+        headerRow.appendChild(headerCell);
+        body.appendChild(headerRow);
+
+        const detailRows = [];
+        for (const record of records) {
+          const row = document.createElement('tr');
+          row.className = 'history-record-row';
+          row.dataset.historyGroup = groupId;
+          row.hidden = !initiallyOpen;
+
+          const values = [
+            formatDate(record.date),
+            record.equipment || '',
+            record.model || '',
+            record.file || '',
+            record.total,
+            '',
+            record.equivalent,
+            record.duplex,
+            record.jams,
+            record.misfeeds,
+            record.economode
+          ];
+
+          values.forEach((value, index) => {
+            const cell = document.createElement('td');
+            if (index >= 4) cell.className = 'num';
+            cell.textContent = displayValue(value);
+            row.appendChild(cell);
+          });
+
+          const action = document.createElement('td');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'mini-btn danger';
+          button.textContent = 'Eliminar';
+          button.addEventListener('click', async () => {
+            const removed = await deleteRecordFromDatabase(record.id);
+            if (!removed) return;
+            state.history = state.history.filter((item) => item.id !== record.id);
+            persistHistory();
+            renderHistory();
+            setDatabaseStatus(
+              `Base común conectada · ${state.history.length} registro(s)`,
+              'ok'
+            );
+          });
+          action.appendChild(button);
+          row.appendChild(action);
+          body.appendChild(row);
+          detailRows.push(row);
+        }
+
+        toggle.addEventListener('click', () => {
+          const expanded = toggle.getAttribute('aria-expanded') === 'true';
+          toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+          detailRows.forEach((row) => { row.hidden = expanded; });
+        });
+
+        groupIndex += 1;
+      }
+    }
+
+    function historyDateKey(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return 'sin-fecha';
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function historyDateLabel(key) {
+      if (key === 'sin-fecha') return 'Sin fecha';
+      const [year, month, day] = key.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return new Intl.DateTimeFormat('es-MX', {
+        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+      }).format(date);
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value || '';
+      return new Intl.DateTimeFormat('es-MX', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      }).format(date);
+    }
+
+    function getReportSettings() {
+      return {
+        idStart: 1,
+        zone: $('reportZone').value.trim(),
+        dependency: $('reportDependency').value.trim(),
+        notes: $('reportNotes').value.trim(),
+        month: $('reportMonth').value.trim() || 'Junio'
+      };
+    }
+
+    function persistReportSettings() {
+      try {
+        localStorage.setItem(REPORT_SETTINGS_KEY, JSON.stringify(getReportSettings()));
+      } catch {
+        // La exportación sigue funcionando aunque el navegador bloquee el almacenamiento local.
+      }
+    }
+
+    function loadReportSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(REPORT_SETTINGS_KEY) || 'null');
+        if (!saved || typeof saved !== 'object') return;
+        if (saved.zone !== undefined) $('reportZone').value = saved.zone;
+        if (saved.dependency !== undefined) $('reportDependency').dataset.savedValue = saved.dependency;
+        if (saved.notes !== undefined) $('reportNotes').value = saved.notes;
+        else if (saved.status !== undefined) $('reportNotes').value = saved.status;
+        if (saved.month !== undefined) $('reportMonth').value = saved.month;
+      } catch {
+        // Usa los valores predeterminados.
+      }
+    }
+
+    function counterReportHeaders() {
+      return [
+        'ID',
+        'ZONA',
+        'Dependencia',
+        'Modelo',
+        'Número de serie',
+        'Fecha del registro',
+        'Total de impresiones',
+        'Impresiones tamaño oficio',
+        'Impresiones tamaño carta',
+        'Hojas a ambas caras',
+        'Eventos de atasco',
+        'Páginas mal alimentadas',
+        'Formato del informe',
+        'Notas'
+      ];
+    }
+
+    function counterFormatLabel(value) {
+      return value === 'simple_counter' ? 'Counter' : 'HP Configuración';
+    }
+
+    function counterReportRow(source, index, settings) {
+      const values = source.values || source;
+      return [
+        settings.idStart + index,
+        settings.zone,
+        settings.dependency,
+        source.model || '',
+        source.equipment || '',
+        formatDate(source.date || new Date().toISOString()),
+        values.total,
+        '',
+        values.equivalent,
+        values.duplex,
+        values.jams,
+        values.misfeeds,
+        counterFormatLabel(source.format),
+        settings.notes
+      ];
+    }
+
+
+    function safeFilePart(value, fallback) {
+      const cleaned = String(value || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .toLowerCase();
+      return cleaned || fallback;
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function excelFill(color) {
+      return { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${color}` } };
+    }
+
+    function excelBorder() {
+      const side = { style: 'thin', color: { argb: `FF${REPORT_LAYOUT.borderColor}` } };
+      return { top: side, left: side, bottom: side, right: side };
+    }
+
+    async function exportReportNative(format, sources, filename) {
+      if (!state.dbBridge || typeof state.dbBridge.exportReport !== 'function') {
+        throw new Error('El componente nativo de exportación no está disponible.');
+      }
+      const settings = getReportSettings();
+      persistReportSettings();
+      const headers = counterReportHeaders();
+      const rows = sources.map((source, index) => counterReportRow(source, index, settings));
+      const response = await bridgeCall('exportReport', JSON.stringify({
+        format,
+        filename,
+        headers,
+        rows,
+        sheetName: REPORT_LAYOUT.sheetName,
+        widths: REPORT_LAYOUT.widths,
+        fills: REPORT_LAYOUT.fills
+      }));
+      return response;
+    }
+
+    async function buildExcelReport(sources, filename) {
+      if (!window.ExcelJS) {
+        alert('No se pudo cargar el generador de Excel. Verifica la conexión a Internet y vuelve a abrir la aplicación.');
+        return;
+      }
+
+      const settings = getReportSettings();
+      persistReportSettings();
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Escáner HP de contadores';
+      workbook.lastModifiedBy = 'Escáner HP de contadores';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+      workbook.subject = `Reporte de contadores ${settings.month} — Zona ${settings.zone || ''}`;
+      workbook.title = `Contadores ${settings.month} Zona ${settings.zone || ''}`;
+      workbook.company = 'CodeCafe.io';
+
+      const worksheet = workbook.addWorksheet(REPORT_LAYOUT.sheetName, {
+        properties: { tabColor: { argb: `FF${REPORT_LAYOUT.headerColor}` }, defaultRowHeight: REPORT_LAYOUT.dataHeight },
+        pageSetup: {
+          paperSize: 9,
+          orientation: 'landscape',
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+          horizontalCentered: true,
+          margins: { left: 0.25, right: 0.25, top: 0.55, bottom: 0.55, header: 0.2, footer: 0.2 }
+        },
+        views: [{ state: 'frozen', ySplit: 1, activeCell: 'A2', showGridLines: true }]
+      });
+
+      const headers = counterReportHeaders();
+      worksheet.columns = headers.map((header, index) => ({ header, key: `c${index + 1}`, width: REPORT_LAYOUT.widths[index] }));
+      const headerRow = worksheet.getRow(1);
+      headerRow.height = REPORT_LAYOUT.headerHeight;
+      headerRow.eachCell({ includeEmpty: true }, (cell) => {
+        cell.fill = excelFill(REPORT_LAYOUT.headerColor);
+        cell.font = { name: REPORT_LAYOUT.fontName, size: 10, bold: true, color: { argb: `FF${REPORT_LAYOUT.headerFontColor}` } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = excelBorder();
+      });
+
+      const rows = sources.map((source, index) => counterReportRow(source, index, settings));
+      rows.forEach((values, index) => {
+        const excelRowNumber = index + 2;
+        const row = worksheet.addRow(values);
+        row.height = REPORT_LAYOUT.dataHeight;
+
+        for (let column = 1; column <= headers.length; column += 1) {
+          const cell = row.getCell(column);
+          cell.fill = excelFill(REPORT_LAYOUT.fills[column - 1] || 'FFFFFF');
+          cell.font = { name: REPORT_LAYOUT.fontName, size: 9, color: { argb: 'FF000000' } };
+          cell.border = excelBorder();
+          cell.alignment = {
+            horizontal: REPORT_LAYOUT.leftAlignedColumns.includes(column) ? 'left' : 'center',
+            vertical: 'middle',
+            wrapText: [6, 11, 12, 13].includes(column)
+          };
+          if (REPORT_LAYOUT.decimalColumns.includes(column)) cell.numFmt = '0.0';
+          else if ([1, 7, 8, 9, 10, 11, 12].includes(column)) cell.numFmt = '0';
+        }
+      });
+
+      const lastRow = Math.max(2, worksheet.rowCount);
+      worksheet.autoFilter = { from: 'A1', to: `N${lastRow}` };
+      worksheet.pageSetup.printArea = `A1:N${lastRow}`;
+      worksheet.pageSetup.printTitlesRow = '1:1';
+      worksheet.headerFooter.oddHeader = `&L&\"${REPORT_LAYOUT.fontName},Regular\"&9ZONA ${settings.zone || ''}&C&\"${REPORT_LAYOUT.fontName},Bold\"&12REPORTE DE CONTADORES — ${String(settings.month).toUpperCase()}&R&\"${REPORT_LAYOUT.fontName},Regular\"&9${new Date().toLocaleDateString('es-MX')}`;
+      worksheet.headerFooter.oddFooter = '&LGenerado por Escáner HP&C Página &P de &N&RCodeCafe Atlas';
+
+      // Resalta números de serie duplicados, una causa común de registros asignados al equipo equivocado.
+      if (worksheet.addConditionalFormatting && lastRow >= 3) {
+        worksheet.addConditionalFormatting({
+          ref: `D2:D${lastRow}`,
+          rules: [{
+            type: 'expression',
+            formulae: [`AND(F2<>\"\",COUNTIF($F$2:$F$${lastRow},F2)>1)`],
+            style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFFFC7CE' }, fgColor: { argb: 'FFFFC7CE' } }, font: { color: { argb: 'FF9C0006' }, bold: true } }
+          }]
+        });
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      downloadBlob(new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }), filename);
+    }
+
+    async function exportBatchExcel() {
+      const results = state.queue.filter((item) => item.values.total !== null || item.foundCount > 0);
+      if (!results.length) {
+        alert('El lote todavía no contiene resultados para exportar.');
+        return;
+      }
+      const settings = getReportSettings();
+      const filename = `reporte_contadores_${safeFilePart(settings.month, 'mes')}_zona_${safeFilePart(settings.zone, 'sin_zona')}_${safeFilePart(settings.dependency, 'sin_dependencia')}.xlsx`;
+      try {
+        setStatus('Generando reporte Excel con formato profesional…', 96);
+        const response = await exportReportNative('xlsx', results, filename);
+        setStatus(response.cancelled ? 'Exportación cancelada.' : 'Reporte Excel guardado.', response.cancelled ? 0 : 100);
+      } catch (error) {
+        console.error(error);
+        alert(`No fue posible generar el archivo Excel: ${error.message || error}`);
+      }
+    }
+
+    async function exportHistoryExcel() {
+      if (!state.history.length) {
+        alert('No hay registros para exportar.');
+        return;
+      }
+      const settings = getReportSettings();
+      const filename = `reporte_contadores_${safeFilePart(settings.month, 'mes')}_zona_${safeFilePart(settings.zone, 'sin_zona')}_${safeFilePart(settings.dependency, 'sin_dependencia')}_historial.xlsx`;
+      try {
+        await exportReportNative('xlsx', state.history, filename);
+      } catch (error) {
+        console.error(error);
+        alert(`No fue posible generar el archivo Excel: ${error.message || error}`);
+      }
+    }
+
+    function buildCsv(headers, rows, filename) {
+      const csv = [headers, ...rows]
+        .map((row) => row.map(csvCell).join(';'))
+        .join('\r\n');
+      const blob = new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' });
+      downloadBlob(blob, filename);
+    }
+
+    function exportBatchCsv() {
+      const results = state.queue.filter((item) => item.values.total !== null || item.foundCount > 0);
+      if (!results.length) {
+        alert('El lote todavía no contiene resultados para exportar.');
+        return;
+      }
+
+      const settings = getReportSettings();
+      persistReportSettings();
+      const filename = `reporte_contadores_${safeFilePart(settings.month, 'mes')}_zona_${safeFilePart(settings.zone, 'sin_zona')}_${safeFilePart(settings.dependency, 'sin_dependencia')}.csv`;
+      exportReportNative('csv', results, filename).catch((error) => {
+        console.error(error);
+        alert(`No fue posible generar el archivo CSV: ${error.message || error}`);
+      });
+    }
+
+    function exportCsv() {
+      if (!state.history.length) {
+        alert('No hay registros para exportar.');
+        return;
+      }
+
+      const settings = getReportSettings();
+      persistReportSettings();
+      const filename = `reporte_contadores_${safeFilePart(settings.month, 'mes')}_zona_${safeFilePart(settings.zone, 'sin_zona')}_${safeFilePart(settings.dependency, 'sin_dependencia')}_historial.csv`;
+      exportReportNative('csv', state.history, filename).catch((error) => {
+        console.error(error);
+        alert(`No fue posible generar el archivo CSV: ${error.message || error}`);
+      });
+    }
+
+    function csvCell(value) {
+      const text = value === null || value === undefined ? '' : String(value);
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+
+    async function clearHistory() {
+      if (!state.history.length) return;
+      if (!confirm('¿Borrar todos los registros de contadores de la base común? Esta acción no puede deshacerse.')) return;
+
+      if (state.dbBridge) {
+        try {
+          await bridgeCall('clearRecords');
+        } catch (error) {
+          alert(`No se pudo borrar la base común: ${error.message || error}`);
+          return;
+        }
+      }
+
+      state.history = [];
+      persistHistory();
+      renderHistory();
+      setDatabaseStatus('Base común conectada · 0 registros', 'ok');
+    }
+
+    function setBusy(busy) {
+      state.busy = busy;
+      $('fileInput').disabled = busy;
+      $('cameraInput').disabled = busy;
+      $('folderInput').disabled = busy;
+      $('rotateLeft').disabled = busy || !state.image;
+      $('rotateRight').disabled = busy || !state.image;
+      $('scanButton').disabled = busy || !currentItem();
+      $('scanAllButton').disabled = busy || !state.queue.length;
+      $('saveBatch').disabled = busy || !state.queue.length;
+      $('exportBatch').disabled = busy || !state.queue.length;
+      $('exportBatchCsv').disabled = busy || !state.queue.length;
+      $('exportExcel').disabled = busy;
+      $('clearQueue').disabled = busy || !state.queue.length;
+      $('saveButton').disabled = busy;
+      $('copyButton').disabled = busy;
+    }
+
+    function setStatus(text, percent) {
+      $('statusText').textContent = text;
+      const safe = Math.max(0, Math.min(100, Number(percent) || 0));
+      $('statusPercent').textContent = `${Math.round(safe)}%`;
+      $('progressBar').style.width = `${safe}%`;
+    }
+  </script>
+</body>
+</html>

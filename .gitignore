@@ -1,0 +1,15 @@
+# CodeCafe Atlas — public source exclusions
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.spec
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,54 @@
+CodeCafe Atlas — Motor de Plantillas: Cédula de Servicio
+
+La plantilla activa es:
+Formato de referencia - Cédula de Servicio.xlsx
+
+Edítala en Excel o LibreOffice y coloca los marcadores dentro de las celdas donde deban aparecer los datos. Los marcadores pueden formar parte de un texto, por ejemplo:
+Nombre del responsable del equipo: {{RESPONSABLE_EQUIPO}}
+
+Placeholders obligatorios:
+{{REPORTE_PRESTADOR}}
+{{FECHA_REPORTE}}
+{{RESPONSABLE_EQUIPO}}
+{{FALLA_REPORTADA}}
+{{MODELO}}
+{{NUMERO_SERIE}}
+{{DIAGNOSTICO}}
+{{SOLUCION}}
+
+Placeholders disponibles:
+{{REPORTE_DGTI}}
+{{REPORTE_PRESTADOR}}
+{{FECHA_REPORTE}}
+{{HORA_REPORTE}}
+{{RESPONSABLE_EQUIPO}}
+{{DEPENDENCIA}}
+{{DOMICILIO}}
+{{CIUDAD_ESTADO}}
+{{TELEFONO_DEPENDENCIA}}
+{{VALIDADOR}}
+{{CARGO_VALIDADOR}}
+{{TELEFONO_VALIDADOR}}
+{{MOV_SUSTITUCION}}
+{{MOV_ACTUALIZACION}}
+{{MOV_REUBICACION}}
+{{MOV_INCREMENTO}}
+{{MOV_DISMINUCION}}
+{{FALLA_REPORTADA}}
+{{TIPO_EQUIPO}}
+{{MARCA}}
+{{MODELO}}
+{{NUMERO_SERIE}}
+{{NUMERO_INVENTARIO}}
+{{FECHA_DIAGNOSTICO}}
+{{HORA_DIAGNOSTICO}}
+{{FECHA_SOLUCION}}
+{{HORA_SOLUCION}}
+{{DIAGNOSTICO}}
+{{SOLUCION}}
+{{OBSERVACIONES}}
+{{TECNICO}}
+{{RESPONSABLE_FIRMA}}
+
+Los placeholders pueden repetirse. En celdas combinadas deben colocarse en la celda superior izquierda.
+La aplicación crea una copia de la plantilla y reemplaza únicamente los marcadores; no modifica la plantilla original al generar una cédula.

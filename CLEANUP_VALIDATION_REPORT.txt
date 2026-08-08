@@ -1,0 +1,31 @@
+CodeCafe Atlas v1.0.24.15 — Public Identity Cleanup Validation
+
+Source basis
+- Direct source: original v1.0.24.15 ZIP from this conversation.
+- Original ZIP SHA-256: 1cfcc941ad0a23d55b8fe9b6f7411863b8086ea8ddb6eb99c43a141f407466b7
+
+Validation performed
+- Python syntax compilation: PASS (34 Python files).
+- Project validate_before_build.py: PASS.
+- Public identity scanner: PASS, zero forbidden-name occurrences in source names/content/Office internals.
+- Linux/macOS shell syntax checks: PASS.
+- SQLite source fixture integrity: PASS (integrity_check=ok; foreign_key_check=0).
+- Original-vs-clean import preview comparison: PASS. Both reported native mode, 103 equipment records, 0 duplicate serial records, 0 duplicate groups, 4 blank serials, and 103 records after the selected filters.
+- Clean replacement path using the exact original v1.0.24.15 database fixture: PASS. Result: 26 dependencies, 103 equipment, 85 counter records, 1 service order; integrity_check=ok; foreign_key_check=0.
+- Arbitrary compatible database filename adoption into data/atlas.db: PASS.
+- Office ZIP package integrity/placeholder validation: PASS through project validator; internal identity scan: zero occurrences.
+
+Not performed
+- A full PySide6 GUI launch/build was not performed in the tool environment because PySide6 is not installed in the system Python available here. The user will compile and perform the real Linux/Windows acceptance test.
+- Windows execution was not possible in this Linux tool environment.
+
+Packaging policy
+- No operational SQLite database is included.
+- No historical database backups are included.
+- The application creates an empty data/atlas.db on first run.
+- Existing compatible Atlas databases remain selectable through the original import/preview/replacement workflow.
+
+Packaging correction 2026-08-08:
+- Restored requirements.txt from the untouched original v1.0.24.15 dependency list.
+- Re-ran project validation and identity scans after restoration.
+- requirements.txt contains no forbidden legacy-name occurrence.
