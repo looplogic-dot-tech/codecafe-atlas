@@ -1,0 +1,70 @@
+CodeCafe Atlas v1.0.24.18 — Full Function Recovery Validation
+
+BASELINE METHOD
+- This release is cumulative, not a rollback to one older version.
+- v1.0.24.17 was used as the immediate source tree.
+- Preserved source packages and change/regression records from the v1.0.x and v1.0.24.x lineage were compared.
+- When historical behavior conflicted, the latest documented user intent was retained.
+
+CUMULATIVE FUNCTION GUARD
+PASS — validate_full_functionality.py
+
+Covered areas:
+- Directory
+- Inventory
+- Data administration/import/reset/export
+- Counter Registry
+- Counter Inserter
+- PDF Separator
+- PDF Viewer / duplicate management
+- Service orders / document generation
+- Service template first-run configuration
+- Format library
+- Database homologation
+- Dashboard
+- Automatic backups
+- Updater integrity protection
+
+RECOVERED/CORRECTED DURING THIS PASS
+- Organizational duplicate/similarity protection from v1.0.24.17 is retained.
+- Format Administration remains library-first.
+- A stale Counter Inserter completion message from an older behavior was corrected: the current approved engine writes only AK–AR and leaves column H intact.
+
+PYTHON
+PASS — 36 Python files syntax-compiled.
+PASS — validate_before_build.py.
+
+PUBLIC IDENTITY SCAN
+PASS — forbidden legacy identity occurrences in paths: 0.
+PASS — forbidden legacy identity occurrences in normal file contents: 0.
+PASS — forbidden legacy identity occurrences inside Office ZIP/XML contents: 0.
+
+DATABASE COMPATIBILITY FIXTURE
+A copy of the active SQLite database from the preserved original v1.0.24.15 source package was used only as a test fixture outside this public source tree.
+
+Import preview:
+- mode: native / clean
+- equipment source: 103
+- duplicate serial records: 0
+- blank serials: 4
+- equipment after no-filter preview: 103
+
+Replacement test result:
+- buildings: 6
+- dependencies: 26
+- offices: 0
+- people: 14
+- equipment: 103
+- counter readings: 85
+- service orders: 1
+- service formats: 3
+- PRAGMA integrity_check: ok
+- PRAGMA foreign_key_check: 0 rows
+
+A newly created public-source database was also verified to start with zero operational records.
+
+NOT TESTED HERE
+- Real PySide6 GUI click-through.
+- Packaged Linux executable launch.
+- Windows executable/build behavior.
+These require platform compilation/visual acceptance testing.

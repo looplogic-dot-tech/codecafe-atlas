@@ -1,0 +1,34 @@
+CodeCafe Atlas v1.0.24.19 — Corrección de cardinalidad compartida y acciones de Órdenes de servicio
+
+PROBLEMAS OBSERVADOS
+- Directorio podía mostrar más equipos que Inventario (ejemplo visual reportado: 258 vs 195).
+- Órdenes de servicio podía mostrar 0 dependencias / 0 equipos aunque la base compartida tuviera datos.
+- "Buscar / abrir carpeta" no abría Dolphin de forma confiable en KDE/Linux.
+
+CAUSA
+- Directorio y Órdenes de servicio todavía usaban vistas SQL de compatibilidad para lecturas de cardinalidad.
+- Una relación histórica múltiple (por ejemplo, más de un CTA relacionado con una dependencia) podía multiplicar filas en esas vistas sin que existieran equipos adicionales en atlas_equipment.
+- El lanzador de carpeta consideraba suficiente iniciar xdg-open, aunque el helper pudiera terminar sin abrir el gestor de archivos.
+
+CORRECCIÓN
+- Directorio obtiene equipos directamente de atlas_equipment y últimos contadores de atlas_counter_readings.
+- Directorio obtiene una sola fila canónica por dependencia; oficina y CTA se resuelven mediante subconsultas deterministas.
+- Órdenes de servicio obtiene dependencias/equipos directamente de atlas_* y por tanto comparte exactamente la cardinalidad de Inventario.
+- En Linux, abrir carpeta intenta primero Dolphin, luego kioclient/gio/xdg-open; conserva fallbacks Qt, Windows y macOS.
+- No se cambió el esquema SQLite.
+
+VALIDACIONES REALIZADAS
+- 36 archivos Python: compilación sintáctica correcta.
+- validate_before_build.py: PASS.
+- validate_full_functionality.py: PASS (ejecutado por validate_before_build.py).
+- Prueba sintética con 1 dependencia, 2 CTA y 2 equipos:
+  Directorio=2, Inventario=2, Órdenes=2; dependencia única en Directorio/Órdenes.
+- Copia de la base original v1.0.24.15:
+  Directorio=103, Inventario=103, Órdenes=103;
+  Directorio=26 dependencias, Órdenes=26 dependencias.
+- Escaneo de identidad pública: ZERO ocurrencias del nombre legado.
+- No se incluye ninguna base SQLite operacional en este paquete.
+
+NO PROBADO EN ESTE ENTORNO
+- Clic visual real de Dolphin desde el binario PyInstaller en el equipo del usuario.
+- Compilación/ejecución Windows.

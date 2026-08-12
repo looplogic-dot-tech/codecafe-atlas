@@ -1,0 +1,27 @@
+CodeCafe Atlas v1.0.24.16 — Public clean source validation
+
+BASELINE
+- Derived from the public-clean continuation of the original untouched CodeCafe Atlas v1.0.24.15 source used in this chat.
+- SQLite schema is unchanged by v1.0.24.16.
+- No operational/work SQLite database is bundled.
+
+V1.0.24.16 CHANGE
+- First-use service-certificate template configuration dialog.
+- Included or user-selected XLSX template.
+- Selectable target worksheet.
+- Existing placeholder engine preserved.
+- Optional direct Atlas-field -> Excel-cell mapping added.
+- Selected template is copied into data/service_templates/ at runtime.
+- Configuration is stored in data/service_template_config.json.
+
+VALIDATION PERFORMED
+- validate_before_build.py: PASS.
+- validate_public_identity.py: PASS; ZERO forbidden-name occurrences.
+- Python syntax compilation: PASS, 35 Python files.
+- Custom-template test: PASS using arbitrary worksheet name, direct mappings for serial/model/dependency, and placeholder replacement for technician.
+- New public-source database creation remains empty and schema-valid under project validation.
+- No database schema migration was added.
+
+NOT TESTED IN THIS ENVIRONMENT
+- Full interactive PySide6 dialog behavior inside a packaged Linux executable.
+- Windows packaged executable behavior.

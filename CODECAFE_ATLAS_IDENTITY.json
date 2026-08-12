@@ -1,0 +1,11 @@
+{
+  "product": "CodeCafe Atlas",
+  "version": "1.0.24.23",
+  "application_id": "io.codecafe.atlas",
+  "origin_id": "CCA-JSS-2026",
+  "author": "Jaime Sánchez Sáenz",
+  "brand": "CodeCafe.io",
+  "contact": "contacto@codecafe.io",
+  "original_year": 2026,
+  "database_compatibility": true
+}

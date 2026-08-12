@@ -1,0 +1,28 @@
+CodeCafe Atlas v1.0.24.21 — Informe de regresión
+Fecha: 2026-08-11
+
+CAMBIO FUNCIONAL
+- Órdenes de servicio: el botón "Buscar / abrir carpeta" debe abrir la carpeta que contiene la plantilla activa.
+- Linux/KDE: Dolphin se invoca explícitamente con --new-window.
+- Si un helper arranca pero termina inmediatamente con error, Atlas intenta el siguiente método en vez de declarar éxito.
+- Se conservan fallbacks kioclient, gio, xdg-open y Qt; Windows usa Explorer y macOS open.
+
+PROTECCIÓN DE CAMBIOS APROBADOS
+- validate_full_functionality.py conserva el guard acumulativo de Directorio, Inventario, Administración de datos,
+  Registro de contadores, Insertador de contadores, Separador PDF, Visor PDF, Órdenes de servicio,
+  configuración de plantilla, Administración de formatos, Homologación, respaldos y updater.
+- Esta versión añade al guard la integración obligatoria del abridor nativo de carpetas.
+
+VALIDACIONES REALIZADAS
+1. Compilación sintáctica de todos los Python: CORRECTA.
+2. validate_before_build.py: CORRECTA.
+3. validate_full_functionality.py: CORRECTA.
+4. validate_public_identity.py: ZERO ocurrencias del nombre legado.
+5. Prueba del lanzador: Dolphin falla -> Atlas intenta xdg-open -> PASS.
+6. Compatibilidad con copia de la DB original v1.0.24.15: PASS.
+   6 edificios, 26 dependencias, 14 personas, 103 equipos, 85 contadores, 1 orden y 3 formatos.
+   PRAGMA integrity_check = ok; foreign_key_check = 0.
+
+NO PROBADO EN ESTE ENTORNO
+- Clic visual real contra Dolphin dentro del binario PyInstaller en el escritorio KDE del usuario.
+- Build/ejecución Windows.
