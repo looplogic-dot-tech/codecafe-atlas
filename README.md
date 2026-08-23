@@ -1,6 +1,6 @@
-# CodeCafe Atlas v1.0.24.24
+# CodeCafe Atlas v1.0.24.25
 
-## v1.0.24.24 — reproducible/offline build maintenance
+## v1.0.24.25 — reproducible/offline build maintenance
 
 This release preserves the v1.0.24.23 functional baseline while replacing the fragile build bootstrap with a persistent offline package cache. Windows builds now install dependencies before validation, reuse compatible cached packages, safely recreate stale build outputs, build/smoke-test from a local staging path, and generate a portable ZIP under `release/`. See `WINDOWS_BUILD_README.md`.
 

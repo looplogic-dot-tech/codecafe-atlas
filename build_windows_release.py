@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-VERSION = "1.0.24.24"
+VERSION = "1.0.24.25"
 PRODUCT = "CodeCafe-Atlas"
 UPDATER = "CodeCafe-Atlas-Updater"
 
@@ -97,7 +97,7 @@ def main() -> int:
     if not main_exe.is_file() or not updater_exe.is_file():
         raise RuntimeError("Final Windows distribution is incomplete.")
 
-    # Critical v1.0.24.24 gate: test before copying into a synced/source path.
+    # Critical v1.0.24.25 gate: test before copying into a synced/source path.
     smoke_test(main_exe)
 
     source_dist = ROOT / "dist"

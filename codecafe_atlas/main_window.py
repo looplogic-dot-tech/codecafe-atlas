@@ -572,9 +572,9 @@ class MainWindow(QMainWindow):
 
         self.navigation.currentItemChanged.connect(self.change_page)
         self.home_page.open_page.connect(self.open_page)
-        self.formats_page.formats_changed.connect(
-            self.service_order_page.refresh_saved_formats
-        )
+        # Service-order format presets are no longer mirrored in a selector on the
+        # service-order page. Formats remain available through the dedicated
+        # Formats page via format_requested -> apply_service_format().
         self.formats_page.format_requested.connect(
             self.apply_service_format
         )

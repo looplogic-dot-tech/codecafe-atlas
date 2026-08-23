@@ -112,7 +112,7 @@ require(PKG/'pdf_duplicate_tools.py','sha256','find_exact_duplicate_groups')
 require(PKG/'service_order_page.py',
         'Actualizar datos','Cargar / configurar plantilla Excel','Restaurar plantilla incluida','Buscar / abrir carpeta',
         'Equipo nuevo','Ciudad','Estado','sync_dependency_city_state','Vista previa de cédula',
-        'Datos predefinidos','Precargar datos','ensure_initial_template_configuration')
+        'equipment_search_changed','ensure_initial_template_configuration')
 require(PKG/'service_template_config.py', 'cell_map','field_mappings','required_placeholders','＋ Añadir campo','Eliminar fila seleccionada','Cargar plantilla Excel propia','Guardar configuración')
 require(PKG/'service_order_page.py','service_template_config.json','active_service_template.xlsx','Reporte DGTI es también el folio')
 
@@ -195,7 +195,7 @@ bootstrap_index = windows_build_text.find("bootstrap_dependencies.py")
 validator_index = windows_build_text.find("validate_public_identity.py")
 if bootstrap_index < 0 or validator_index < 0 or bootstrap_index > validator_index:
     raise SystemExit("ERROR Build v1.0.24.24: Windows debe preparar dependencias antes de validar.")
-for fragment in ("build_windows_release.py", "1.0.24.24", "release\\CodeCafe_Atlas_v1.0.24.24_Windows_x64.zip"):
+for fragment in ("build_windows_release.py", "1.0.24.25", "release\\CodeCafe_Atlas_v1.0.24.25_Windows_x64.zip"):
     if fragment not in windows_build_text:
         raise SystemExit(f"ERROR Build v1.0.24.24: build Windows incompleto ({fragment}).")
 windows_release_text = windows_release_path.read_text(encoding="utf-8")
@@ -210,3 +210,44 @@ print("BUILD REPRODUCIBILITY VALIDATION: PASS")
 
 require(PKG/'platform_open.py','open_file_native','kioclient6','gio','xdg-open','libreoffice')
 require(PKG/'service_order_page.py','open_file_native(output)','open_file_native(path)')
+
+
+# SERVICE ORDER REMOVED PRESET UI STARTUP GUARD
+# v1.0.24.25 removed the saved-format selector from ServiceOrderPage. No startup
+# wiring may reference the removed refresh_saved_formats() method.
+_main_window = (ROOT / "codecafe_atlas" / "main_window.py").read_text(encoding="utf-8")
+_service_order = (ROOT / "codecafe_atlas" / "service_order_page.py").read_text(encoding="utf-8")
+if "refresh_saved_formats" in _main_window:
+    raise SystemExit("ERROR: main_window.py todavía referencia refresh_saved_formats eliminado.")
+if "def refresh_saved_formats" in _service_order:
+    raise SystemExit("ERROR: reapareció refresh_saved_formats pese a eliminarse el selector redundante.")
+print("SERVICE ORDER REMOVED PRESET UI STARTUP GUARD: PASS")
+
+# SERVICE ORDER COMPLETE CLEAR-FORM REGRESSION GUARD
+# Nuevo / limpiar must reset every user-facing field group, not only service notes.
+import ast as _ast
+_service_source = (ROOT / "codecafe_atlas" / "service_order_page.py").read_text(encoding="utf-8")
+_tree = _ast.parse(_service_source)
+_clear_node = None
+for _node in _ast.walk(_tree):
+    if isinstance(_node, (_ast.FunctionDef, _ast.AsyncFunctionDef)) and _node.name == "clear_form":
+        _clear_node = _node
+        break
+if _clear_node is None:
+    raise SystemExit("ERROR: falta ServiceOrderPage.clear_form().")
+_clear_text = _ast.get_source_segment(_service_source, _clear_node) or ""
+for _fragment in (
+    "self.document_type", "self.dgti_report.clear()", "self.provider_report.clear()",
+    "self.output_folder.clear()", "self.dependency_filter.clear()",
+    "self.dependency.setCurrentIndex(-1)", "self.auto_dependency_name",
+    "self.auto_city", "self.auto_state", "self.responsible_name.clear()",
+    "self.validator_name.clear()", "self.validator_role.clear()",
+    "self.validator_phone.clear()", "self.equipment_filter.clear()",
+    "self.equipment.setCurrentIndex(-1)", "self._equipment_detail_widgets()",
+    "self.reported_issue.clear()", "self.diagnosis.clear()",
+    "self.solution.clear()", "self.service_notes.clear()",
+    "self.technician_name.clear()",
+):
+    if _fragment not in _clear_text:
+        raise SystemExit(f"ERROR: Nuevo / limpiar no reinicia el formulario completo ({_fragment}).")
+print("SERVICE ORDER COMPLETE CLEAR-FORM VALIDATION: PASS")

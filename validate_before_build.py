@@ -473,14 +473,24 @@ for fragment in (
         raise SystemExit(f"ERROR Formatos: falta navegación ({fragment}).")
 
 service_text = service_path.read_text(encoding="utf-8")
-for fragment in (
+# v1.0.24.25: the redundant saved-format preload bar was intentionally removed
+# from Service Order. Template loading/configuration lives behind the dedicated
+# "Cargar / configurar plantilla Excel" action. Backend saved-format support is
+# retained for compatibility with Administración de formatos.
+for forbidden in (
     'QLabel("Datos predefinidos")',
     'QPushButton("Precargar datos")',
-    "def refresh_saved_formats",
-    "def apply_saved_format",
+    'self.template_label = QLabel(',
+    'self.refresh_status = QLabel(',
+    'Datos actualizados:',
 ):
+    if forbidden in service_text:
+        raise SystemExit(f"ERROR Servicio v1.0.24.25: elemento marcado para eliminación todavía visible ({forbidden}).")
+for fragment in ("def apply_saved_format", "equipment_search_changed", 'QPushButton("Cargar / configurar plantilla Excel")'):
     if fragment not in service_text:
-        raise SystemExit(f"ERROR Formatos: falta precarga ({fragment}).")
+        raise SystemExit(f"ERROR Servicio v1.0.24.25: falta compatibilidad/sincronización ({fragment}).")
+if "self.saved_format" in service_text:
+    raise SystemExit("ERROR Servicio v1.0.24.25: quedó una dependencia del selector de formato eliminado.")
 
 connection = sqlite3.connect(db_path)
 try:
