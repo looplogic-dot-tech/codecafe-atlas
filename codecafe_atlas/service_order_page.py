@@ -3,9 +3,11 @@ from __future__ import annotations
 import html
 import json
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QTime, Qt, QUrl
+from PySide6.QtCore import QDate, QTime, Qt, QUrl, QTimer
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -34,6 +36,12 @@ from PySide6.QtWidgets import (
 
 from .database import Database
 from .paths import data_dir, module_dir
+from .platform_open import open_directory_native, open_file_native
+from .service_template_config import (
+    ServiceTemplateConfigDialog,
+    load_template_settings,
+    save_template_settings,
+)
 from .service_document_generator import (
     SERVICE_REQUIRED_PLACEHOLDERS,
     SERVICE_SUPPORTED_PLACEHOLDERS,
@@ -111,9 +119,10 @@ class ServiceOrderPage(QWidget):
         self._last_dependency_id: int | None = None
         self.folder = module_dir("service_order")
         self.template_path = self.folder / "Formato de referencia - Cédulas.xlsx"
-        self.service_template_path = self.folder / "Formato de referencia - Cédula de Servicio.xlsx"
         self.default_service_template_path = self.folder / "Plantilla predeterminada - Cédula de Servicio.xlsx"
         self.settings_path = data_dir() / "service_order_settings.json"
+        self.template_config_path = data_dir() / "service_template_config.json"
+        self.managed_service_template_path = data_dir() / "service_templates" / "active_service_template.xlsx"
         self.last_output_folder = self._load_last_output_folder()
 
         root = QVBoxLayout(self)
@@ -125,32 +134,20 @@ class ServiceOrderPage(QWidget):
 
         template_bar = QHBoxLayout()
         reload_button = QPushButton("Actualizar datos")
-        replace_button = QPushButton("Reemplazar plantilla")
+        replace_button = QPushButton("Cargar / configurar plantilla Excel")
         validate_button = QPushButton("Validar plantilla")
         restore_button = QPushButton("Restaurar plantilla incluida")
+        restore_button.setEnabled(self.default_service_template_path.exists())
+        if not self.default_service_template_path.exists():
+            restore_button.setToolTip("No hay una plantilla de recuperación incluida; la plantilla Excel activa puede ser una plantilla propia.")
         open_template_folder = QPushButton("Buscar / abrir carpeta")
-        self.template_label = QLabel(str(self.service_template_path))
-        self.template_label.setWordWrap(True)
         template_bar.addWidget(reload_button)
         template_bar.addWidget(replace_button)
         template_bar.addWidget(validate_button)
         template_bar.addWidget(restore_button)
         template_bar.addWidget(open_template_folder)
-        template_bar.addWidget(self.template_label, 1)
+        template_bar.addStretch(1)
         root.addLayout(template_bar)
-
-        saved_format_bar = QHBoxLayout()
-        saved_format_bar.addWidget(QLabel("Formato guardado"))
-        self.saved_format = QComboBox()
-        self.saved_format.setMinimumContentsLength(30)
-        self.saved_format.setToolTip(
-            "Selecciona un formato administrado en el módulo Administración de formatos."
-        )
-        apply_saved_format_button = QPushButton("Precargar formato")
-        apply_saved_format_button.setObjectName("secondaryButton")
-        saved_format_bar.addWidget(self.saved_format, 1)
-        saved_format_bar.addWidget(apply_saved_format_button)
-        root.addLayout(saved_format_bar)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         root.addWidget(splitter, 1)
@@ -170,7 +167,6 @@ class ServiceOrderPage(QWidget):
             "Mantenimiento Preventivo",
             "Dictaminación",
         ])
-        self.folio = line_edit("Folio completamente editable")
         self.dgti_report = line_edit("Reporte asignado por DGTI")
         self.provider_report = line_edit("Ejemplo: REP-0001")
         self.report_date = QDateEdit()
@@ -178,7 +174,7 @@ class ServiceOrderPage(QWidget):
         self.report_date.setDisplayFormat("dd/MM/yyyy")
         self.report_date.setDate(QDate.currentDate())
         self.report_time = QTimeEdit()
-        self.report_time.setDisplayFormat("HH:mm")
+        self.report_time.setDisplayFormat("hh:mm:ss AP")
         self.report_time.setTime(QTime.currentTime())
         self.output_folder = line_edit("Seleccione dónde guardar las cédulas")
         if self.last_output_folder:
@@ -191,7 +187,6 @@ class ServiceOrderPage(QWidget):
         output_layout.addWidget(browse_output)
 
         doc_form.addRow("Tipo de documento", self.document_type)
-        doc_form.addRow("Folio *", self.folio)
         doc_form.addRow("Reporte DGTI", self.dgti_report)
         doc_form.addRow("Reporte del prestador", self.provider_report)
         doc_form.addRow("Fecha", self.report_date)
@@ -325,14 +320,14 @@ class ServiceOrderPage(QWidget):
         self.diagnosis_date.setDisplayFormat("dd/MM/yyyy")
         self.diagnosis_date.setDate(QDate.currentDate())
         self.diagnosis_time = QTimeEdit()
-        self.diagnosis_time.setDisplayFormat("HH:mm")
+        self.diagnosis_time.setDisplayFormat("hh:mm:ss AP")
         self.diagnosis_time.setTime(QTime.currentTime())
         self.solution_date = QDateEdit()
         self.solution_date.setCalendarPopup(True)
         self.solution_date.setDisplayFormat("dd/MM/yyyy")
         self.solution_date.setDate(QDate.currentDate())
         self.solution_time = QTimeEdit()
-        self.solution_time.setDisplayFormat("HH:mm")
+        self.solution_time.setDisplayFormat("hh:mm:ss AP")
         self.solution_time.setTime(QTime.currentTime())
 
         self.technician_name = line_edit("Nombre del técnico del prestador")
@@ -413,9 +408,10 @@ class ServiceOrderPage(QWidget):
         browse_output.clicked.connect(self.choose_output_folder)
         self.dependency_filter.textChanged.connect(self.refresh_dependencies)
         self.dependency.currentIndexChanged.connect(self.dependency_changed)
-        self.equipment_filter.textChanged.connect(self.refresh_equipment)
+        self.equipment_filter.textChanged.connect(self.equipment_search_changed)
         self.equipment.currentIndexChanged.connect(self.fill_equipment_details)
         self.manual_equipment.toggled.connect(self.equipment_mode_changed)
+        self.auto_serial.editingFinished.connect(self.resolve_registered_serial_from_detail)
         self.search.textChanged.connect(self.refresh_history)
         self.table.itemSelectionChanged.connect(self.load_selected_order)
         new_button.clicked.connect(self.clear_form)
@@ -428,40 +424,10 @@ class ServiceOrderPage(QWidget):
         self.reported_issue_template.currentTextChanged.connect(
             self.apply_reported_issue_template
         )
-        apply_saved_format_button.clicked.connect(
-            self.apply_selected_saved_format
-        )
 
         self.full_refresh()
         self.update_document_fields()
-
-    def refresh_saved_formats(self, preserve_id: int | None = None) -> None:
-        if preserve_id is None:
-            preserve_id = self.saved_format.currentData()
-        rows = self.database.list_service_formats(active_only=True)
-        self.saved_format.blockSignals(True)
-        self.saved_format.clear()
-        self.saved_format.addItem("Seleccionar formato…", None)
-        for row in rows:
-            description = str(row["description"] or "").strip()
-            label = str(row["name"] or "")
-            if description:
-                label = f"{label} — {description}"
-            self.saved_format.addItem(label, int(row["id"]))
-        index = self.saved_format.findData(preserve_id)
-        self.saved_format.setCurrentIndex(index if index >= 0 else 0)
-        self.saved_format.blockSignals(False)
-
-    def apply_selected_saved_format(self) -> None:
-        format_id = self.saved_format.currentData()
-        if format_id is None:
-            QMessageBox.information(
-                self,
-                "Sin formato",
-                "Selecciona un formato guardado para precargarlo.",
-            )
-            return
-        self.apply_saved_format(int(format_id), notify=True)
+        QTimer.singleShot(0, self.ensure_initial_template_configuration)
 
     def apply_saved_format(self, format_id: int, notify: bool = True) -> bool:
         row = self.database.get_service_format(format_id)
@@ -471,7 +437,6 @@ class ServiceOrderPage(QWidget):
                 "Formato no disponible",
                 "El formato seleccionado ya no existe en la base de datos.",
             )
-            self.refresh_saved_formats()
             return False
 
         self.document_type.setCurrentText(
@@ -511,14 +476,13 @@ class ServiceOrderPage(QWidget):
         if condition:
             self.equipment_condition.setCurrentText(condition)
 
-        self.refresh_saved_formats(preserve_id=format_id)
         if notify:
             QMessageBox.information(
                 self,
-                "Formato precargado",
-                f"Se aplicó el formato '{row['name']}'.\n\n"
-                "El folio, la dependencia, el equipo, las fechas y los reportes "
-                "se conservan como datos específicos de la orden.",
+                "Datos precargados",
+                f"Se aplicaron los datos predefinidos '{row['name']}'.\n\n"
+                "El Reporte DGTI (que también funciona como folio), la dependencia, "
+                "el equipo, las fechas y los reportes se conservan como datos específicos de la orden.",
             )
         return True
 
@@ -600,7 +564,6 @@ class ServiceOrderPage(QWidget):
         )).lower()
 
     def full_refresh(self):
-        self.refresh_saved_formats()
         current_dependency = self.dependency.currentData()
         current_equipment = self.equipment.currentData()
         self.all_dependency_rows = self.database.dependency_choices_detailed()
@@ -669,6 +632,77 @@ class ServiceOrderPage(QWidget):
             self.responsible_name.setText(cta)
             self.validator_name.setText(cta)
             self.validator_phone.setText(phone)
+
+    def resolve_registered_serial_from_detail(self) -> None:
+        """If a manually typed serial already exists, switch to that registered equipment.
+
+        This also supports the serial-first workflow when no dependency has been
+        chosen yet, avoiding duplicate capture of an existing asset.
+        """
+        query = self.auto_serial.text().strip().casefold()
+        if not query:
+            return
+        matches = [
+            row for row in self.all_equipment_rows
+            if str(row["serial_number"] or "").strip().casefold() == query
+        ]
+        if len(matches) != 1:
+            return
+        row = matches[0]
+        equipment_id = int(row["id"])
+        dependency_id = int(row["dependency_id"])
+        # Existing equipment wins over manual/new mode.
+        if self.manual_equipment.isChecked():
+            self.manual_equipment.blockSignals(True)
+            self.manual_equipment.setChecked(False)
+            self.manual_equipment.blockSignals(False)
+            self.equipment_filter.setEnabled(True)
+            self.equipment.setEnabled(True)
+            self.manual_equipment_status.setEnabled(False)
+            for widget in self._equipment_detail_widgets():
+                widget.setReadOnly(True)
+        self.dependency_filter.blockSignals(True)
+        self.dependency_filter.clear()
+        self.dependency_filter.blockSignals(False)
+        self.refresh_dependencies(preserve_id=dependency_id)
+        dep_index = self.dependency.findData(dependency_id)
+        if dep_index >= 0 and self.dependency.currentData() != dependency_id:
+            self.dependency.setCurrentIndex(dep_index)
+        self.equipment_filter.blockSignals(True)
+        self.equipment_filter.setText(str(row["serial_number"] or ""))
+        self.equipment_filter.blockSignals(False)
+        self.refresh_equipment(preserve_id=equipment_id)
+
+    def equipment_search_changed(self, text: str) -> None:
+        """Resolve an exact serial globally before applying dependency filtering.
+
+        This lets the operator start with a serial number.  If it uniquely
+        identifies registered equipment, Atlas selects that equipment's
+        dependency and then the equipment itself.
+        """
+        query = str(text or "").strip().casefold()
+        if query and not self.manual_equipment.isChecked():
+            matches = [
+                row for row in self.all_equipment_rows
+                if str(row["serial_number"] or "").strip().casefold() == query
+            ]
+            if len(matches) == 1:
+                row = matches[0]
+                equipment_id = int(row["id"])
+                dependency_id = int(row["dependency_id"])
+                dep_index = self.dependency.findData(dependency_id)
+                if dep_index < 0:
+                    # A dependency text filter must not prevent serial-first lookup.
+                    self.dependency_filter.blockSignals(True)
+                    self.dependency_filter.clear()
+                    self.dependency_filter.blockSignals(False)
+                    self.refresh_dependencies(preserve_id=dependency_id)
+                    dep_index = self.dependency.findData(dependency_id)
+                if dep_index >= 0 and self.dependency.currentData() != dependency_id:
+                    self.dependency.setCurrentIndex(dep_index)
+                self.refresh_equipment(preserve_id=equipment_id)
+                return
+        self.refresh_equipment()
 
     def refresh_equipment(self, *_args, preserve_id=None):
         if preserve_id is None:
@@ -792,8 +826,14 @@ class ServiceOrderPage(QWidget):
         return True
 
     def _template_validation_message(self, path: Path) -> tuple[bool, str]:
+        if not path.exists():
+            return False, (
+                "No hay una plantilla activa. Usa Configurar plantilla y selecciona el archivo Excel que deseas utilizar."
+            )
         try:
-            found, missing, unknown = validate_service_template(path)
+            found, missing, unknown = validate_service_template(
+                path, self.active_service_required_placeholders()
+            )
         except Exception as error:
             return False, f"No se pudo leer la plantilla:\n{error}"
         lines = [f"Placeholders encontrados: {len(found)}"]
@@ -805,49 +845,84 @@ class ServiceOrderPage(QWidget):
             lines.append("\nLa plantilla es compatible con el Motor de Plantillas.")
         return not missing, "".join(lines)
 
+    def template_configuration(self) -> dict:
+        return load_template_settings(self.template_config_path)
+
+    def active_service_template_path(self) -> Path:
+        config = self.template_configuration()
+        configured = str(config.get("template_path") or "").strip()
+        if configured and Path(configured).exists():
+            return Path(configured)
+        # Nunca caer silenciosamente en una plantilla histórica por nombre.
+        # La plantilla activa es explícita y administrada.
+        return self.managed_service_template_path
+
+    def active_service_cell_map(self) -> dict[str, list[str]]:
+        config = self.template_configuration()
+        mapping = config.get("cell_map") or {}
+        return mapping if isinstance(mapping, dict) else {}
+
+    def active_service_placeholder_aliases(self) -> dict[str, str]:
+        config = self.template_configuration()
+        rows = config.get("field_mappings")
+        aliases: dict[str, str] = {}
+        if isinstance(rows, list):
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                target = str(row.get("placeholder") or "").strip().upper()
+                source = str(row.get("source_placeholder") or "").strip().upper()
+                if target and source:
+                    aliases[target] = source
+        return aliases
+
+    def active_service_required_placeholders(self) -> set[str]:
+        config = self.template_configuration()
+        values = config.get("required_placeholders")
+        if isinstance(values, list):
+            return {str(value).strip() for value in values if str(value).strip()}
+        return set(SERVICE_REQUIRED_PLACEHOLDERS)
+
+    def active_service_sheet_name(self) -> str:
+        config = self.template_configuration()
+        value = str(config.get("sheet_name") or "").strip()
+        return value or "Cédula de Servicio"
+
+    def ensure_initial_template_configuration(self) -> None:
+        config = self.template_configuration()
+        if bool(config.get("configured")) and self.active_service_template_path().exists():
+            return
+        self.configure_template(first_run=True)
+
+    def configure_template(self, *, first_run: bool = False) -> None:
+        dialog = ServiceTemplateConfigDialog(
+            self,
+            included_template=self.default_service_template_path,
+            config_path=self.template_config_path,
+            managed_template_path=self.managed_service_template_path,
+        )
+        if first_run:
+            dialog.setWindowTitle("Primera configuración del generador de cédulas — CodeCafe Atlas")
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            QMessageBox.information(
+                self,
+                "Generador configurado",
+                "La plantilla y el mapeo de campos quedaron guardados. Puedes cambiarlos en cualquier momento con Configurar plantilla.",
+            )
+
     def validate_template(self):
-        valid, message = self._template_validation_message(self.service_template_path)
+        path = self.active_service_template_path()
+        valid, message = self._template_validation_message(path)
+        cell_map = self.active_service_cell_map()
+        if cell_map:
+            message += f"\n\nMapeos directos de celda configurados: {len(cell_map)}"
         if valid:
             QMessageBox.information(self, "Plantilla válida", message)
         else:
             QMessageBox.warning(self, "Plantilla incompleta", message)
 
     def replace_template(self):
-        selected, _ = QFileDialog.getOpenFileName(
-            self,
-            "Seleccionar plantilla de Cédula de Servicio",
-            str(self.folder),
-            "Libro de Excel (*.xlsx)",
-        )
-        if not selected:
-            return
-        selected_path = Path(selected)
-        valid, message = self._template_validation_message(selected_path)
-        if not valid:
-            answer = QMessageBox.question(
-                self,
-                "Plantilla incompleta",
-                message + "\n\n¿Deseas instalarla de todos modos?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-        try:
-            if self.service_template_path.exists():
-                backup = self.folder / "Formato de referencia - Cédula de Servicio_anterior.xlsx"
-                shutil.copy2(self.service_template_path, backup)
-            if selected_path.resolve() != self.service_template_path.resolve():
-                shutil.copy2(selected_path, self.service_template_path)
-        except Exception as error:
-            QMessageBox.critical(self, "No se pudo reemplazar", str(error))
-            return
-        self.template_label.setText(str(self.service_template_path))
-        QMessageBox.information(
-            self,
-            "Plantilla actualizada",
-            "La plantilla activa fue reemplazada. La anterior quedó respaldada en la misma carpeta.",
-        )
+        self.configure_template()
 
     def restore_default_template(self):
         if not self.default_service_template_path.exists():
@@ -859,24 +934,45 @@ class ServiceOrderPage(QWidget):
         answer = QMessageBox.question(
             self,
             "Restaurar plantilla",
-            "Se reemplazará la plantilla activa por la versión incluida. ¿Continuar?",
+            "Se volverá a usar la plantilla incluida y se eliminará el mapeo directo personalizado. ¿Continuar?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            if self.service_template_path.exists():
-                backup = self.folder / "Formato de referencia - Cédula de Servicio_anterior.xlsx"
-                shutil.copy2(self.service_template_path, backup)
-            shutil.copy2(self.default_service_template_path, self.service_template_path)
+            self.managed_service_template_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.default_service_template_path, self.managed_service_template_path)
+            save_template_settings(
+                self.template_config_path,
+                {
+                    "configured": True,
+                    "template_path": str(self.managed_service_template_path),
+                    "source_name": self.default_service_template_path.name,
+                    "sheet_name": "Cédula de Servicio",
+                    "cell_map": {},
+                    "required_placeholders": sorted(SERVICE_REQUIRED_PLACEHOLDERS),
+                },
+            )
         except Exception as error:
             QMessageBox.critical(self, "No se pudo restaurar", str(error))
             return
         QMessageBox.information(self, "Plantilla restaurada", "Se restauró la plantilla incluida.")
 
     def open_module_folder(self):
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder.resolve())))
+        """Open the folder that contains the active service template."""
+        folder = self.active_service_template_path().resolve().parent
+        folder.mkdir(parents=True, exist_ok=True)
+
+        opened, diagnostic = open_directory_native(folder)
+        if opened:
+            return
+
+        QMessageBox.warning(
+            self,
+            "No se pudo abrir la carpeta",
+            f"Atlas no pudo abrir el administrador de archivos para:\n{folder}\n\nDetalle:\n{diagnostic}",
+        )
 
     def field_values(self):
         dependency_id = self.dependency.currentData()
@@ -914,7 +1010,8 @@ class ServiceOrderPage(QWidget):
 
         return {
             **equipment_data,
-            "folio": self.folio.text().strip(),
+            # Regla operativa: el Reporte DGTI es también el folio.
+            "folio": self.dgti_report.text().strip(),
             "document_type": self.document_type.currentText(),
             "manual_equipment": manual,
             "equipment_id": equipment_id,
@@ -935,7 +1032,7 @@ class ServiceOrderPage(QWidget):
             "dgti_report": self.dgti_report.text().strip(),
             "provider_report": self.provider_report.text().strip(),
             "report_date": self.report_date.date().toString("dd/MM/yyyy"),
-            "report_time": self.report_time.time().toString("HH:mm"),
+            "report_time": self.report_time.time().toString("hh:mm:ss AP"),
             "responsible_name": self.responsible_name.text().strip(),
             "validator_name": self.validator_name.text().strip(),
             "validator_role": self.validator_role.text().strip(),
@@ -944,10 +1041,10 @@ class ServiceOrderPage(QWidget):
             "reported_issue": self.reported_issue.toPlainText().strip(),
             "diagnosis": self.diagnosis.toPlainText().strip(),
             "diagnosis_date": self.diagnosis_date.date().toString("dd/MM/yyyy"),
-            "diagnosis_time": self.diagnosis_time.time().toString("HH:mm"),
+            "diagnosis_time": self.diagnosis_time.time().toString("hh:mm:ss AP"),
             "solution": self.solution.toPlainText().strip(),
             "solution_date": self.solution_date.date().toString("dd/MM/yyyy"),
-            "solution_time": self.solution_time.time().toString("HH:mm"),
+            "solution_time": self.solution_time.time().toString("hh:mm:ss AP"),
             "service_notes": self.service_notes.toPlainText().strip(),
             "technician_name": self.technician_name.text().strip(),
             "output_path": self.current_output_path,
@@ -957,9 +1054,9 @@ class ServiceOrderPage(QWidget):
         }
 
     def validate(self, values, require_output: bool = False):
-        if not values["folio"]:
-            self.folio.setFocus()
-            raise ValueError("El folio es obligatorio, aunque puede escribirse con cualquier formato.")
+        if not values["dgti_report"]:
+            self.dgti_report.setFocus()
+            raise ValueError("El Reporte DGTI es obligatorio y se utiliza automáticamente como folio.")
         if values.get("manual_equipment"):
             if not values["equipment_type"]:
                 self.auto_equipment_type.setFocus()
@@ -1105,7 +1202,7 @@ class ServiceOrderPage(QWidget):
             <h1>{esc(values.get('document_type'))}</h1>
             <table>
                 <tr><td class='label'>Reporte DGTI</td><td>{esc(values.get('dgti_report'))}</td>
-                    <td class='label'>Reporte del prestador</td><td>{esc(values.get('provider_report') or values.get('folio'))}</td></tr>
+                    <td class='label'>Reporte del prestador</td><td>{esc(values.get('provider_report'))}</td></tr>
                 <tr><td class='label'>Fecha y hora</td><td colspan='3'>{esc(values.get('report_date'))} — {esc(values.get('report_time'))}</td></tr>
             </table>
             <h2>Responsable y dependencia</h2>
@@ -1184,6 +1281,10 @@ class ServiceOrderPage(QWidget):
                 self.template_path,
                 Path(values["output_folder"]),
                 values,
+                service_template_path=self.active_service_template_path(),
+                service_cell_map=self.active_service_cell_map(),
+                service_sheet_name=self.active_service_sheet_name(),
+                service_placeholder_aliases=self.active_service_placeholder_aliases(),
             )
             self.current_output_path = str(output)
             self.database.update_service_order_output(
@@ -1206,9 +1307,14 @@ class ServiceOrderPage(QWidget):
             f"El archivo se guardó en:\n\n{output}{extra}\n\n¿Abrirlo ahora?",
         )
         if answer == QMessageBox.StandardButton.Yes:
-            QDesktopServices.openUrl(
-                QUrl.fromLocalFile(str(output))
-            )
+            opened, diagnostic = open_file_native(output)
+            if not opened:
+                QMessageBox.warning(
+                    self,
+                    "No se pudo abrir el archivo",
+                    f"La cédula sí fue generada y permanece guardada en:\n{output}\n\n"
+                    f"Atlas no pudo iniciar la aplicación asociada.\n\nDetalle:\n{diagnostic}",
+                )
 
     def refresh_history(self):
         rows = self.database.list_service_orders(self.search.text())
@@ -1237,7 +1343,13 @@ class ServiceOrderPage(QWidget):
 
     @staticmethod
     def _set_time(widget: QTimeEdit, value: str):
-        parsed = QTime.fromString(str(value or ""), "HH:mm")
+        raw = str(value or "").strip()
+        parsed = QTime()
+        # Formato nuevo y compatibilidad con cédulas guardadas en formato 24 h.
+        for time_format in ("hh:mm:ss AP", "HH:mm:ss", "HH:mm"):
+            parsed = QTime.fromString(raw, time_format)
+            if parsed.isValid():
+                break
         widget.setTime(parsed if parsed.isValid() else QTime.currentTime())
 
     def load_selected_order(self):
@@ -1250,7 +1362,6 @@ class ServiceOrderPage(QWidget):
             return
         self.current_id = order_id
         self.current_output_path = str(row["output_path"] or "")
-        self.folio.setText(str(row["folio"] or ""))
         self.document_type.setCurrentText(str(row["document_type"] or "Cédula de Servicio"))
         self.manual_equipment.setChecked(False)
 
@@ -1268,7 +1379,7 @@ class ServiceOrderPage(QWidget):
         if equipment_index >= 0:
             self.equipment.setCurrentIndex(equipment_index)
 
-        self.dgti_report.setText(str(row["dgti_report"] or ""))
+        self.dgti_report.setText(str(row["dgti_report"] or row["folio"] or ""))
         self.provider_report.setText(str(row["provider_report"] or ""))
         self._set_date(self.report_date, row["report_date"])
         self._set_time(self.report_time, row["report_time"])
@@ -1296,14 +1407,76 @@ class ServiceOrderPage(QWidget):
             self._save_last_output_folder(previous_folder)
 
     def clear_form(self):
+        """Reset the complete service-order form to a genuinely blank new record.
+
+        Keep only application-level configuration (template configuration and the
+        history table).  No dependency, equipment, person, report or output-path
+        value from the previous order is allowed to remain visible in the form.
+        """
         self.current_id = None
         self.current_output_path = ""
         self.table.clearSelection()
-        self.folio.clear()
+
+        # Document section.
+        self.document_type.blockSignals(True)
+        self.document_type.setCurrentText("Cédula de Servicio")
+        self.document_type.blockSignals(False)
         self.dgti_report.clear()
         self.provider_report.clear()
+        self.output_folder.clear()
+        self.report_date.setDate(QDate.currentDate())
+        self.report_time.setTime(QTime.currentTime())
+
+        # Dependency section: clear both the search/selection and every value
+        # derived from the previously selected dependency.
+        self._last_dependency_id = None
+        self.dependency_filter.blockSignals(True)
+        self.dependency_filter.clear()
+        self.dependency_filter.blockSignals(False)
+        self.dependency.blockSignals(True)
+        self.dependency.setCurrentIndex(-1)
+        self.dependency.blockSignals(False)
+        for widget in (
+            self.auto_dependency_name,
+            self.auto_building,
+            self.auto_floor,
+            self.auto_office,
+            self.auto_address,
+            self.auto_city,
+            self.auto_state,
+            self.auto_cta,
+            self.auto_phone,
+            self.auto_email,
+        ):
+            widget.clear()
+
+        # Equipment section: leave neither a selected registered asset nor data
+        # from manual/new-equipment mode behind.
+        self.manual_equipment.blockSignals(True)
+        self.manual_equipment.setChecked(False)
+        self.manual_equipment.blockSignals(False)
+        self.equipment_filter.blockSignals(True)
+        self.equipment_filter.clear()
+        self.equipment_filter.blockSignals(False)
+        self.equipment.blockSignals(True)
+        self.equipment.setCurrentIndex(-1)
+        self.equipment.blockSignals(False)
+        self.equipment_filter.setEnabled(True)
+        self.equipment.setEnabled(True)
+        self.manual_equipment_status.setCurrentText("Activo")
+        self.manual_equipment_status.setEnabled(False)
+        for widget in self._equipment_detail_widgets():
+            widget.clear()
+            widget.setReadOnly(True)
+
+        # People / validation section.
+        self.responsible_name.clear()
+        self.validator_name.clear()
         self.validator_role.clear()
+        self.validator_phone.clear()
         self.movement_type.setCurrentIndex(0)
+
+        # Service section.
         self.reported_issue_template.blockSignals(True)
         self.reported_issue_template.setCurrentText("Entrada manual")
         self.reported_issue_template.blockSignals(False)
@@ -1312,19 +1485,21 @@ class ServiceOrderPage(QWidget):
         self.solution.clear()
         self.service_notes.clear()
         self.technician_name.clear()
-        self.report_date.setDate(QDate.currentDate())
-        self.report_time.setTime(QTime.currentTime())
         self.diagnosis_date.setDate(QDate.currentDate())
         self.diagnosis_time.setTime(QTime.currentTime())
         self.solution_date.setDate(QDate.currentDate())
         self.solution_time.setTime(QTime.currentTime())
         self.equipment_operates.setCurrentText("Sí")
         self.equipment_condition.setCurrentText("No")
-        self.manual_equipment.setChecked(False)
-        self.manual_equipment_status.setCurrentText("Activo")
-        self.fill_dependency_details(apply_defaults=True)
-        self.fill_equipment_details()
-        self.folio.setFocus()
+
+        # Preserve the populated choice lists for immediate reuse, but present
+        # the new form with no dependency/equipment selected.
+        self.dependency_status.setText(
+            f"{len(self.all_dependency_rows)} dependencia(s) disponibles"
+        )
+        self.equipment_status.setText("Selecciona primero una dependencia")
+        self.update_document_fields()
+        self.dgti_report.setFocus()
 
     def delete_record(self):
         if self.current_id is None:
@@ -1356,4 +1531,11 @@ class ServiceOrderPage(QWidget):
         if not path or not path.exists():
             QMessageBox.warning(self, "Archivo no encontrado", "La orden no tiene un archivo existente asociado.")
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        opened, diagnostic = open_file_native(path)
+        if not opened:
+            QMessageBox.warning(
+                self,
+                "No se pudo abrir el archivo",
+                f"El archivo existe en:\n{path}\n\n"
+                f"Atlas no pudo iniciar la aplicación asociada.\n\nDetalle:\n{diagnostic}",
+            )

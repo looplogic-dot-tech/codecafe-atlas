@@ -38,18 +38,21 @@ missing = sorted(required - methods)
 if missing:
     raise SystemExit("ERROR: faltan funciones de Orden de Servicio: " + ", ".join(missing))
 
-# 3. The service template must use the placeholder engine.
+# 3. An included recovery template is optional. If present, validate it.
+#    A user-supplied active template is a supported production configuration and
+#    must not make the source/build depend on historical bundled filenames.
 from codecafe_atlas.service_document_generator import validate_service_template
-service_template = root / "modules" / "service_order" / "Formato de referencia - Cédula de Servicio.xlsx"
 default_template = root / "modules" / "service_order" / "Plantilla predeterminada - Cédula de Servicio.xlsx"
-for template in (service_template, default_template):
-    if not template.is_file():
-        raise SystemExit(f"ERROR: falta {template.name}")
-    _found, missing, unknown = validate_service_template(template)
+if default_template.is_file():
+    _found, missing, unknown = validate_service_template(default_template)
     if missing:
-        raise SystemExit(f"ERROR: {template.name} no contiene: {sorted(missing)}")
+        raise SystemExit(f"ERROR: {default_template.name} no contiene: {sorted(missing)}")
     if unknown:
-        raise SystemExit(f"ERROR: {template.name} contiene placeholders desconocidos: {sorted(unknown)}")
+        raise SystemExit(f"ERROR: {default_template.name} contiene placeholders desconocidos: {sorted(unknown)}")
+else:
+    config_text = (root / "codecafe_atlas" / "service_template_config.py").read_text(encoding="utf-8")
+    if "Cargar plantilla Excel propia" not in config_text or "No hay plantilla incluida disponible" not in config_text:
+        raise SystemExit("ERROR: no hay plantilla de recuperación y el configurador no admite una plantilla propia independiente.")
 
 # 4. Non-negotiable Directory requirements must remain in source.
 directory_text = (root / "codecafe_atlas" / "directory_page.py").read_text(encoding="utf-8")
@@ -93,12 +96,27 @@ if not status.get("installation_uuid"):
     raise SystemExit("ERROR Sync: falta installation_uuid.")
 
 # 6. Public builds must create empty writable data/backups directories, not bundle operational DBs.
-for build_file in (root / "build_linux.sh", root / "build_windows.bat"):
-    build_text = build_file.read_text(encoding="utf-8").replace("\\", "/")
-    if "data" not in build_text or "backups" not in build_text:
-        raise SystemExit(f"ERROR: {build_file.name} no prepara data/backups.")
-    if re.search(r"\.(?:db|sqlite|sqlite3)\b", build_text, flags=re.IGNORECASE):
-        raise SystemExit(f"ERROR: {build_file.name} intenta empaquetar una base operacional.")
+# Linux prepares them directly in build_linux.sh. Windows intentionally delegates
+# release assembly to build_windows_release.py so it can build/smoke-test from a
+# local non-synchronized path before copying the accepted distro back to source.
+build_checks = (
+    (root / "build_linux.sh", (root / "build_linux.sh",)),
+    (root / "build_windows.bat", (root / "build_windows.bat", root / "build_windows_release.py")),
+)
+for build_entry, implementation_files in build_checks:
+    texts = [path.read_text(encoding="utf-8").replace("\\", "/") for path in implementation_files]
+    combined = "\n".join(texts)
+    if "data" not in combined or "backups" not in combined:
+        raise SystemExit(f"ERROR: {build_entry.name} no prepara data/backups.")
+    if re.search(r"\.(?:db|sqlite|sqlite3)\b", combined, flags=re.IGNORECASE):
+        raise SystemExit(f"ERROR: {build_entry.name} intenta empaquetar una base operacional.")
+
+# The Windows entry point must actually delegate to the release builder whose
+# data/backups preparation was validated above; otherwise a stale helper file
+# could make this guard pass without being part of the real build.
+windows_entry = (root / "build_windows.bat").read_text(encoding="utf-8")
+if "build_windows_release.py" not in windows_entry:
+    raise SystemExit("ERROR: build_windows.bat no invoca build_windows_release.py.")
 
 # 7. Dashboard personalization must remain local and configurable.
 home_text = (root / "codecafe_atlas" / "home_page.py").read_text(encoding="utf-8")
@@ -330,10 +348,21 @@ for fragment in (
     if fragment not in main_text:
         raise SystemExit(f"ERROR Logo: falta integración en la navegación ({fragment}).")
 
-for build_file in (root / "build_linux.sh", root / "build_windows.bat", root / "build_macos.sh"):
-    build_text = build_file.read_text(encoding="utf-8").replace("\\", "/")
-    if "assets" not in build_text or "codecafe_atlas" not in build_text:
-        raise SystemExit(f"ERROR Logo: {build_file.name} no empaqueta los recursos gráficos.")
+# Build entry points may delegate the actual PyInstaller command to a helper.
+# Validate the complete implementation chain instead of requiring every token
+# to appear literally in the thin entry-point script.
+logo_build_checks = (
+    (root / "build_linux.sh", (root / "build_linux.sh",)),
+    (root / "build_windows.bat", (root / "build_windows.bat", root / "build_windows_release.py")),
+    (root / "build_macos.sh", (root / "build_macos.sh",)),
+)
+for build_entry, implementation_files in logo_build_checks:
+    combined = "\n".join(
+        path.read_text(encoding="utf-8").replace("\\", "/")
+        for path in implementation_files
+    )
+    if "assets" not in combined or "codecafe_atlas" not in combined:
+        raise SystemExit(f"ERROR Logo: {build_entry.name} no empaqueta los recursos gráficos.")
 
 
 # 13. Every exported ZIP must include a UTF-8 CSV report at its root.
@@ -444,23 +473,33 @@ for fragment in (
         raise SystemExit(f"ERROR Formatos: falta navegación ({fragment}).")
 
 service_text = service_path.read_text(encoding="utf-8")
-for fragment in (
-    'QLabel("Formato guardado")',
-    'QPushButton("Precargar formato")',
-    "def refresh_saved_formats",
-    "def apply_saved_format",
+# v1.0.24.25: the redundant saved-format preload bar was intentionally removed
+# from Service Order. Template loading/configuration lives behind the dedicated
+# "Cargar / configurar plantilla Excel" action. Backend saved-format support is
+# retained for compatibility with Administración de formatos.
+for forbidden in (
+    'QLabel("Datos predefinidos")',
+    'QPushButton("Precargar datos")',
+    'self.template_label = QLabel(',
+    'self.refresh_status = QLabel(',
+    'Datos actualizados:',
 ):
+    if forbidden in service_text:
+        raise SystemExit(f"ERROR Servicio v1.0.24.25: elemento marcado para eliminación todavía visible ({forbidden}).")
+for fragment in ("def apply_saved_format", "equipment_search_changed", 'QPushButton("Cargar / configurar plantilla Excel")'):
     if fragment not in service_text:
-        raise SystemExit(f"ERROR Formatos: falta precarga ({fragment}).")
+        raise SystemExit(f"ERROR Servicio v1.0.24.25: falta compatibilidad/sincronización ({fragment}).")
+if "self.saved_format" in service_text:
+    raise SystemExit("ERROR Servicio v1.0.24.25: quedó una dependencia del selector de formato eliminado.")
 
 connection = sqlite3.connect(db_path)
 try:
     formats_count = int(connection.execute(
         "SELECT COUNT(*) FROM service_formats"
     ).fetchone()[0])
-    if formats_count < 3:
+    if formats_count != 0:
         raise SystemExit(
-            f"ERROR Formatos: la base contiene {formats_count}; se esperaban al menos 3."
+            f"ERROR Formatos: una base nueva debe iniciar vacía; contiene {formats_count}."
         )
 finally:
     connection.close()
@@ -705,3 +744,42 @@ if '"locations"' in sync_engine_text.split('SYNC_TABLES =', 1)[1].split(')', 1)[
 sync_page_text = (root / "codecafe_atlas" / "sync_compare_page.py").read_text(encoding="utf-8")
 if "Mantener ambos" in sync_page_text:
     raise SystemExit("ERROR Homologación: no debe permitirse crear duplicados con 'Mantener ambos'.")
+
+# 18. Full cumulative recovery guard for all verified historical workflows.
+import runpy
+runpy.run_path(str(root / "validate_full_functionality.py"), run_name="__atlas_full_function_validation__")
+
+# Counter shared-history regression: both counter interfaces must write/update
+# the canonical atlas_counter_readings table, never UPSERT the compatibility view.
+_counter_validation_root = tempfile.TemporaryDirectory(prefix="codecafe_atlas_validate_counter_")
+_counter_db = Database(Path(_counter_validation_root.name) / "atlas.db")
+_counter_building = _counter_db.save_building({"name": "Counter Validation Building"})
+_counter_dependency = _counter_db.save_dependency({"name": "Counter Validation Dependency", "building_id": _counter_building})
+_counter_equipment = _counter_db.save_equipment({
+    "dependency_id": _counter_dependency, "equipment_type": "Printer", "brand": "HP",
+    "model": "Validation", "serial_number": "ATLASCOUNTERTEST001", "inventory_number": "",
+    "assigned_user": "", "ip_address": "", "hostname": "", "status": "Activo", "notes": "",
+})
+_counter_uid = _counter_db.save_equipment_counter(_counter_equipment, {
+    "reading_date": "2026-08-17", "total_prints": 100, "letter_prints": 90,
+})
+_counter_db.save_equipment_counter(_counter_equipment, {
+    "reading_date": "2026-08-17", "total_prints": 101, "letter_prints": 91,
+}, _counter_uid)
+_counter_result = _counter_db.save_counter_records([{
+    "id": _counter_uid, "equipment": "ATLASCOUNTERTEST001", "date": "2026-08-17",
+    "total": 102, "equivalent": 92, "format": "validation",
+}])
+_counter_rows = _counter_db.list_equipment_counter_records(_counter_equipment)
+if len(_counter_rows) != 1 or float(_counter_rows[0]["total_prints"]) != 102:
+    raise SystemExit("ERROR Contadores: Registro de contadores y Contador de impresiones no comparten correctamente el historial canónico.")
+_counter_db_path = Path(_counter_validation_root.name) / "atlas.db"
+_counter_connection = sqlite3.connect(_counter_db_path)
+try:
+    _canonical_count = _counter_connection.execute("SELECT COUNT(*) FROM atlas_counter_readings").fetchone()[0]
+    if _canonical_count != 1:
+        raise SystemExit("ERROR Contadores: la escritura no quedó exclusivamente en atlas_counter_readings.")
+finally:
+    _counter_connection.close()
+_counter_validation_root.cleanup()
+print("COUNTER SHARED HISTORY VALIDATION: PASS")

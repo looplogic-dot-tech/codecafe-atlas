@@ -1,12 +1,13 @@
-Generador de órdenes de servicio / cédulas
+CodeCafe Atlas — Órdenes / Cédulas de Servicio
 
-La plantilla activa es:
+La Cédula de Servicio utiliza UNA plantilla activa administrada desde «Configurar plantilla».
+La plantilla activa se copia a data/service_templates/active_service_template.xlsx y no depende
+de nombres ni archivos históricos dentro de esta carpeta.
+
+Plantilla predeterminada - Cédula de Servicio.xlsx
+  Copia de recuperación incluida para «Restaurar plantilla incluida». Puede sustituirse en uso
+  normal por cualquier .xlsx válido mediante el configurador.
+
 Formato de referencia - Cédulas.xlsx
-
-Contiene:
-- Cédula de Servicio
-- Mantenimiento Preventivo
-- Dictaminación
-
-Puede reemplazarse desde la pantalla del módulo. La versión anterior se conserva
-como Formato de referencia - Cédulas_anterior.xlsx.
+  Libro maestro legado conservado únicamente para Mantenimiento Preventivo y Dictaminación.
+  No es requerido para generar una Cédula de Servicio con una plantilla activa propia.

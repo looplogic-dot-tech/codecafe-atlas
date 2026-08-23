@@ -2,14 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-python3 validate_before_build.py
-python3 validate_public_identity.py
-
-if [[ ! -x ".venv/bin/python" ]]; then
-  python3 -m venv .venv
-fi
-
-.venv/bin/python -m pip install --disable-pip-version-check -r requirements.txt
+python3 bootstrap_dependencies.py
+.venv/bin/python validate_public_identity.py
+.venv/bin/python validate_full_functionality.py
+.venv/bin/python validate_before_build.py
 
 rm -rf build dist
 
@@ -36,4 +32,4 @@ if [[ $STATUS -ne 0 && $STATUS -ne 124 ]]; then
 fi
 rm -f "$LOG"
 echo "Compilación y prueba de arranque correctas."
-echo ".venv/bin/python make_update_package.py --dist dist/CodeCafe-Atlas --version 1.0.24.15 --platform linux --architecture x86_64"
+echo ".venv/bin/python make_update_package.py --dist dist/CodeCafe-Atlas --version 1.0.24.26 --platform linux --architecture x86_64"

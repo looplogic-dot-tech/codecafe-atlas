@@ -48,84 +48,87 @@ def _database_counts(path: Path) -> tuple[int, int, int, int]:
     except sqlite3.Error:
         return 0, 0, 0, 0
 
-def _looks_like_atlas_database(path: Path) -> bool:
+def _database_schema_kind(path: Path) -> str:
+    """Classify a candidate DB without modifying it.
+
+    Only schemas Atlas actually knows how to open/migrate are accepted here.
+    This deliberately avoids treating any DB with a generic ``dependencies``
+    table as an Atlas database.
+    """
     if not path.is_file() or path.suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
-        return False
+        return ""
     try:
         c = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
         try:
-            names = {str(r[0]).lower() for r in c.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
-            return bool({"atlas_equipment", "equipment", "dependencies"} & names)
+            tables = {str(r[0]).lower() for r in c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            user_version = int(c.execute("PRAGMA user_version").fetchone()[0])
+            clean_required = {
+                "atlas_buildings", "atlas_dependencies", "atlas_equipment",
+                "atlas_counter_readings", "atlas_service_orders",
+            }
+            legacy_required = {"buildings", "locations", "dependencies", "equipment"}
+            if clean_required.issubset(tables) and user_version >= 3:
+                return "clean"
+            if legacy_required.issubset(tables):
+                return "legacy-compatible"
+            return ""
         finally:
             c.close()
     except sqlite3.Error:
-        return False
+        return ""
+
+
+def _looks_like_atlas_database(path: Path) -> bool:
+    return bool(_database_schema_kind(path))
+
 
 def _candidate_databases(current: Path) -> list[Path]:
-    root = application_root()
-    parent = root.parent
+    """Return explicit same-installation DB candidates only.
+
+    A fresh public build must never rummage through sibling Atlas versions and
+    silently adopt one of their databases.  Compatibility is preserved for an
+    in-place upgrade: any recognized DB intentionally left in this install's
+    own ``data`` directory can be adopted when ``atlas.db`` does not yet hold
+    data.  Other databases remain available through Administrar datos ->
+    Cargar/migrar base de datos existente.
+    """
     candidates: list[Path] = []
-
-    # First, accept any compatible database already placed in this installation's data folder.
     for candidate in data_dir().glob("*"):
-        if candidate.resolve() != current.resolve() and _looks_like_atlas_database(candidate):
-            candidates.append(candidate)
-
-    # Then inspect sibling portable installations without depending on historical product names.
-    if parent.exists():
-        for folder in parent.iterdir():
-            if not folder.is_dir() or folder.resolve() == root.resolve():
-                continue
-            folder_data = folder / "data"
-            if not folder_data.is_dir():
-                continue
-            for candidate in folder_data.glob("*"):
-                if candidate.resolve() != current.resolve() and _looks_like_atlas_database(candidate):
-                    candidates.append(candidate)
-
-    # Optional current-brand shared-data folders.
-    for shared_name in ("CodeCafe Atlas Data", "CodeCafe_Atlas_Data"):
-        shared = parent / shared_name
-        if not shared.is_dir():
+        if candidate.resolve() == current.resolve():
             continue
-        for candidate in shared.glob("*"):
-            if candidate.resolve() != current.resolve() and _looks_like_atlas_database(candidate):
-                candidates.append(candidate)
+        if _looks_like_atlas_database(candidate):
+            candidates.append(candidate)
+    return candidates
 
-    # Preserve deterministic order while removing duplicate resolved paths.
-    unique: dict[Path, Path] = {}
-    for candidate in candidates:
-        unique[candidate.resolve()] = candidate
-    return list(unique.values())
 
 def _migrate_previous_database_if_needed(current: Path) -> None:
     global _LAST_DATABASE_MIGRATION
-    if sum(_database_counts(current)) > 0:
+    if current.exists() and current.stat().st_size > 0:
+        # An existing atlas.db is authoritative.  Database.initialize() will
+        # validate/migrate it; never replace it behind the user's back.
         return
 
     ranked = []
     for candidate in _candidate_databases(current):
         counts = _database_counts(candidate)
         total = sum(counts)
-        if total <= 0:
+        schema_kind = _database_schema_kind(candidate)
+        if not schema_kind:
             continue
-        folder_name = candidate.parents[1].name if len(candidate.parents) > 1 else ""
-        match = re.search(r"v(\d+(?:\.\d+)*)", folder_name, flags=re.IGNORECASE)
-        version = tuple(int(part) for part in match.group(1).split(".")) if match else (-1,)
-        ranked.append((version, candidate.stat().st_mtime, total, candidate, counts))
+        ranked.append((candidate.stat().st_mtime, total, candidate, counts, schema_kind))
 
     if not ranked:
         return
 
-    _, _, _, source, counts = max(ranked, key=lambda item: (item[0], item[1], item[2]))
+    _, _, source, counts, schema_kind = max(ranked, key=lambda item: (item[0], item[1]))
     current.parent.mkdir(parents=True, exist_ok=True)
-    if current.exists() and current.stat().st_size > 0:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        shutil.copy2(current, current.with_name(f"atlas_antes_de_migrar_{stamp}.db"))
     shutil.copy2(source, current)
     _LAST_DATABASE_MIGRATION = (
-        f"Se recuperó automáticamente una base Atlas compatible desde {source}. "
-        f"Dependencias: {counts[0]}, equipos: {counts[1]}, órdenes: {counts[2]}, contadores: {counts[3]}."
+        f"Se adoptó una base Atlas compatible colocada en esta instalación: {source.name}. "
+        f"Formato: {schema_kind}. Dependencias: {counts[0]}, equipos: {counts[1]}, "
+        f"órdenes: {counts[2]}, contadores: {counts[3]}."
     )
 
 def database_path() -> Path:

@@ -2,12 +2,12 @@
 setlocal
 cd /d "%~dp0"
 
-if not exist ".venv\Scripts\python.exe" (
-    py -m venv .venv
-    if errorlevel 1 goto :error
+where py >nul 2>nul
+if not errorlevel 1 (
+    py bootstrap_dependencies.py
+) else (
+    python bootstrap_dependencies.py
 )
-
-".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt
 if errorlevel 1 goto :error
 
 ".venv\Scripts\python.exe" main.py

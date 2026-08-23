@@ -2426,8 +2426,8 @@ class AtlasGUI:
         self.status_var.set(f"Copia verificada: {equipment} equipos y {written} celdas insertadas.")
         self.messagebox.showinfo(
             APP_NAME,
-            f"Proceso terminado.\n\nSe actualizaron {equipment} equipos y {written} celdas en H y AK–AR para Torreón. "
-            f'H se estableció como “{STATUS_VALUE}” solo donde existía al menos un contador mayor a 0. '
+            f"Proceso terminado.\n\nSe actualizaron {equipment} equipos y {written} celdas exclusivamente en AK–AR para Torreón. "
+            f"La columna H y todas las columnas fuera de AK–AR permanecieron intactas. "
             f"Los campos vacíos autorizados de esos equipos se completaron con 0.\n\nArchivo:\n{output}"
         )
 

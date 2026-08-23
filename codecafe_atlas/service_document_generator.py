@@ -96,7 +96,7 @@ def fill_common_header(ws, data: dict[str, Any], document_type: str) -> None:
         # La clave contractual de M5 permanece fija en la plantilla revisada.
         # El reporte del prestador se presenta con la identidad CodeCafe Atlas en la plantilla
         # y el valor editable en M8.
-        provider_report = str(data.get("provider_report", "") or data.get("folio", "")).strip()
+        provider_report = str(data.get("provider_report", "") or "").strip()
         provider_report = re.sub(r"^[A-Z][A-Z0-9 ]{2,31}[-_ ]+(?=REQ[-_ ]*\d)", "", provider_report, flags=re.IGNORECASE)
         write_value(ws, "L7", data.get("dgti_report", ""))
         write_value(ws, "M8", provider_report)
@@ -146,7 +146,7 @@ def fill_equipment_row(ws, row: int, data: dict[str, Any]) -> None:
 
 def service_placeholder_values(data: dict[str, Any]) -> dict[str, str]:
     movement = str(data.get("movement_type", "") or "").strip().casefold()
-    provider_report = str(data.get("provider_report", "") or data.get("folio", "")).strip()
+    provider_report = str(data.get("provider_report", "") or "").strip()
     provider_report = re.sub(r"^[A-Z][A-Z0-9 ]{2,31}[-_ ]+(?=REQ[-_ ]*\d)", "", provider_report, flags=re.IGNORECASE)
     responsible_signature = str(data.get("validator_name") or data.get("responsible_name") or "").strip()
     responsible_role = str(data.get("validator_role", "") or "").strip()
@@ -208,15 +208,43 @@ def template_placeholders(template_path: Path) -> set[str]:
         workbook.close()
 
 
-def validate_service_template(template_path: Path) -> tuple[set[str], set[str], set[str]]:
+def validate_service_template(
+    template_path: Path,
+    required_placeholders: set[str] | None = None,
+) -> tuple[set[str], set[str], set[str]]:
+    """Validate one service template.
+
+    Required fields are configurable per active template.  The built-in defaults are
+    used only when no explicit requirement set is supplied.
+    """
     found = template_placeholders(Path(template_path))
-    missing = SERVICE_REQUIRED_PLACEHOLDERS - found
+    required = (
+        SERVICE_REQUIRED_PLACEHOLDERS
+        if required_placeholders is None
+        else {str(token).strip() for token in required_placeholders if str(token).strip()}
+    )
+    missing = required - found
     unknown = found - SERVICE_SUPPORTED_PLACEHOLDERS
     return found, missing, unknown
 
 
-def fill_service_placeholders(ws, data: dict[str, Any]) -> None:
+def _service_replacements(
+    data: dict[str, Any],
+    placeholder_aliases: dict[str, str] | None = None,
+) -> dict[str, str]:
     replacements = service_placeholder_values(data)
+    for target, source in (placeholder_aliases or {}).items():
+        target = str(target or "").strip().upper()
+        source = str(source or "").strip().upper()
+        if target and source in replacements:
+            replacements[target] = replacements[source]
+    return replacements
+
+
+def fill_service_placeholders(
+    ws, data: dict[str, Any], placeholder_aliases: dict[str, str] | None = None
+) -> None:
+    replacements = _service_replacements(data, placeholder_aliases)
     pattern = re.compile(r"\{\{[A-Z0-9_]+\}\}")
     for row in ws.iter_rows():
         for cell in row:
@@ -227,12 +255,14 @@ def fill_service_placeholders(ws, data: dict[str, Any]) -> None:
 
 
 def configure_service_vertical_labels(ws) -> None:
-    """Conserva verticales los dos rótulos laterales del bloque de firmas."""
+    """Conserva verticales los dos rótulos sin perder el ajuste de la plantilla."""
     for coordinate in ("A53", "H53"):
         cell = ws[coordinate]
         alignment = copy(cell.alignment)
         alignment.textRotation = 90
-        alignment.wrapText = False
+        # La plantilla activa es la autoridad sobre el ajuste de texto.  Forzarlo
+        # a False desacomodaba A53 y H53 en cada cédula nueva, aunque el usuario
+        # hubiera guardado correctamente la plantilla base.
         alignment.horizontal = "center"
         alignment.vertical = "center"
         cell.alignment = alignment
@@ -261,8 +291,33 @@ def configure_service_print_layout(ws) -> None:
     ws.page_margins.footer = 0.10
 
 
-def fill_service_sheet(ws, data: dict[str, Any]) -> None:
-    fill_service_placeholders(ws, data)
+def fill_service_cell_map(
+    ws, data: dict[str, Any], cell_map: dict[str, list[str]] | None = None,
+    placeholder_aliases: dict[str, str] | None = None,
+) -> None:
+    if not cell_map:
+        return
+    replacements = _service_replacements(data, placeholder_aliases)
+    for token, cells in cell_map.items():
+        if token not in replacements:
+            continue
+        value = replacements[token]
+        if isinstance(cells, str):
+            cells = [cells]
+        for coordinate in cells or []:
+            coordinate = str(coordinate or "").strip().upper()
+            if coordinate:
+                ws[coordinate] = value
+
+
+def fill_service_sheet(
+    ws,
+    data: dict[str, Any],
+    cell_map: dict[str, list[str]] | None = None,
+    placeholder_aliases: dict[str, str] | None = None,
+) -> None:
+    fill_service_placeholders(ws, data, placeholder_aliases)
+    fill_service_cell_map(ws, data, cell_map, placeholder_aliases)
     configure_service_vertical_labels(ws)
     configure_service_print_layout(ws)
 
@@ -307,6 +362,11 @@ def generate_service_document(
     template_path: Path,
     output_folder: Path,
     data: dict[str, Any],
+    *,
+    service_template_path: Path | None = None,
+    service_cell_map: dict[str, list[str]] | None = None,
+    service_sheet_name: str | None = None,
+    service_placeholder_aliases: dict[str, str] | None = None,
 ) -> Path:
     document_type = str(data.get("document_type") or "Cédula de Servicio")
     if document_type not in SHEET_MAP:
@@ -315,23 +375,28 @@ def generate_service_document(
     template_path = Path(template_path)
     output_folder = Path(output_folder)
 
-    # La cédula de servicio usa su propia plantilla de referencia, actualizada
-    # a partir del formato validado manualmente. Las hojas de mantenimiento
-    # preventivo y dictaminación continúan usando el libro maestro original.
-    effective_template = template_path
+    # La Cédula de Servicio depende exclusivamente de la plantilla activa
+    # configurada por el usuario.  No busca ni exige plantillas históricas por
+    # nombre.  El libro maestro se conserva únicamente para los otros tipos de
+    # documento que todavía lo requieren.
     if document_type == "Cédula de Servicio":
-        service_template = template_path.with_name(
-            "Formato de referencia - Cédula de Servicio.xlsx"
-        )
-        if service_template.exists():
-            effective_template = service_template
+        if service_template_path is None:
+            raise FileNotFoundError(
+                "No hay una plantilla activa para Cédula de Servicio. "
+                "Selecciona una con Configurar plantilla."
+            )
+        effective_template = Path(service_template_path)
+    else:
+        effective_template = template_path
 
     if not effective_template.exists():
-        raise FileNotFoundError(f"No se encontró la plantilla:\n{effective_template}")
+        raise FileNotFoundError(f"No se encontró la plantilla activa:\n{effective_template}")
     output_folder.mkdir(parents=True, exist_ok=True)
 
     workbook = load_workbook(effective_template)
     target_sheet = SHEET_MAP[document_type]
+    if document_type == "Cédula de Servicio" and service_sheet_name:
+        target_sheet = str(service_sheet_name).strip()
     if target_sheet not in workbook.sheetnames:
         raise ValueError(f"La plantilla no contiene la hoja «{target_sheet}».")
 
@@ -342,7 +407,7 @@ def generate_service_document(
 
     worksheet = workbook[target_sheet]
     if document_type == "Cédula de Servicio":
-        fill_service_sheet(worksheet, data)
+        fill_service_sheet(worksheet, data, service_cell_map, service_placeholder_aliases)
     elif document_type == "Mantenimiento Preventivo":
         fill_maintenance_sheet(worksheet, data)
     else:
@@ -351,13 +416,19 @@ def generate_service_document(
     folio = safe_filename(data.get("folio", ""), "sin_folio")
     serial = safe_filename(data.get("serial_number", ""), "sin_serie")
     kind = safe_filename(document_type, "cedula")
-    filename = f"{kind} - {folio} - {serial}.xlsx"
+    if document_type == "Cédula de Servicio":
+        # Regla operativa: Reporte DGTI == folio y es el nombre base del archivo.
+        filename = f"{folio}.xlsx"
+        duplicate_name = f"{folio} - {{timestamp}}.xlsx"
+    else:
+        filename = f"{kind} - {folio} - {serial}.xlsx"
+        duplicate_name = f"{kind} - {folio} - {serial} - {{timestamp}}.xlsx"
     output_path = output_folder / filename
 
     # Evita sobreescribir silenciosamente una cédula anterior.
     if output_path.exists():
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        output_path = output_folder / f"{kind} - {folio} - {serial} - {timestamp}.xlsx"
+        output_path = output_folder / duplicate_name.format(timestamp=timestamp)
 
     workbook.save(output_path)
     return output_path
