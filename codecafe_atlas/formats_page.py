@@ -42,8 +42,7 @@ class FormatsPage(QWidget):
         root.setSpacing(12)
         root.addWidget(page_header(
             "Administración de formatos",
-            "Crea, consulta y modifica formatos reutilizables. Los datos se guardan "
-            "en la base de datos y pueden precargar una orden de servicio.",
+            "Biblioteca de plantillas y formatos. Selecciona un formato para ver o editar su configuración.",
         ))
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -65,9 +64,9 @@ class FormatsPage(QWidget):
         search_row.addWidget(refresh_button)
         catalog_layout.addLayout(search_row)
 
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels([
-            "Nombre", "Tipo", "Movimiento", "Estado", "Actualizado",
+            "Nombre", "Tipo", "Estado", "Actualizado",
         ])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -78,17 +77,32 @@ class FormatsPage(QWidget):
         catalog_layout.addWidget(self.table, 1)
 
         catalog_actions = QHBoxLayout()
+        new_catalog_button = QPushButton("Nuevo formato")
+        new_catalog_button.clicked.connect(self.clear_form)
         use_button = QPushButton("Usar en orden de servicio")
         use_button.setObjectName("primaryButton")
         use_button.clicked.connect(self.request_current_format)
         duplicate_button = QPushButton("Duplicar")
         duplicate_button.clicked.connect(self.duplicate_current)
+        catalog_actions.addWidget(new_catalog_button)
         catalog_actions.addWidget(use_button)
         catalog_actions.addWidget(duplicate_button)
         catalog_layout.addLayout(catalog_actions)
         splitter.addWidget(catalog)
 
-        # Editor
+        # Detail/editor: hidden until a format is selected or New format is pressed.
+        right_host = QWidget()
+        right_layout = QVBoxLayout(right_host)
+        right_layout.setContentsMargins(10, 0, 0, 0)
+        self.empty_detail = QLabel(
+            "Selecciona un formato de la biblioteca para ver o editar su configuración.\n\n"
+            "También puedes usar Nuevo formato para crear una nueva plantilla."
+        )
+        self.empty_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_detail.setWordWrap(True)
+        self.empty_detail.setObjectName("mutedLabel")
+        right_layout.addWidget(self.empty_detail, 1)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         editor_host = QWidget()
@@ -169,11 +183,13 @@ class FormatsPage(QWidget):
         editor_root.addStretch(1)
 
         scroll.setWidget(editor_host)
-        splitter.addWidget(scroll)
+        self.editor_scroll = scroll
+        right_layout.addWidget(scroll, 1)
+        splitter.addWidget(right_host)
         splitter.setSizes([530, 760])
 
         self.refresh()
-        self.clear_form()
+        self._show_library_placeholder()
 
     @staticmethod
     def _large_notes(placeholder: str) -> QTextEdit:
@@ -181,6 +197,16 @@ class FormatsPage(QWidget):
         widget.setMinimumHeight(88)
         widget.setMaximumHeight(150)
         return widget
+
+    def _show_library_placeholder(self) -> None:
+        self.current_id = None
+        self.table.clearSelection()
+        self.editor_scroll.setVisible(False)
+        self.empty_detail.setVisible(True)
+
+    def _show_editor(self) -> None:
+        self.empty_detail.setVisible(False)
+        self.editor_scroll.setVisible(True)
 
     def refresh(self, *_args, preserve_id: int | None = None) -> None:
         if preserve_id is None:
@@ -195,7 +221,6 @@ class FormatsPage(QWidget):
             values = [
                 str(row["name"] or ""),
                 str(row["document_type"] or ""),
-                str(row["movement_type"] or ""),
                 "Activo" if int(row["active"] or 0) else "Inactivo",
                 str(row["updated_at"] or ""),
             ]
@@ -227,6 +252,7 @@ class FormatsPage(QWidget):
         if row is None:
             return
         self.current_id = format_id
+        self._show_editor()
         self.name.setText(str(row["name"] or ""))
         self.document_type.setCurrentText(str(row["document_type"] or "Cédula de Servicio"))
         self.description.setPlainText(str(row["description"] or ""))
@@ -279,6 +305,7 @@ class FormatsPage(QWidget):
 
     def clear_form(self) -> None:
         self.current_id = None
+        self._show_editor()
         self.table.clearSelection()
         self.name.clear()
         self.document_type.setCurrentText("Cédula de Servicio")
@@ -326,8 +353,8 @@ class FormatsPage(QWidget):
         except Exception as error:
             QMessageBox.warning(self, "No se pudo eliminar", str(error))
             return
-        self.clear_form()
         self.refresh()
+        self._show_library_placeholder()
         self.formats_changed.emit()
 
     def request_current_format(self) -> None:

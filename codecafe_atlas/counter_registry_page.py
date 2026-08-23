@@ -36,6 +36,7 @@ try:
 except ImportError:
     pytesseract = None
 
+from .platform_open import open_directory_native
 from .database import Database
 from .paths import application_root, bundled_root, module_dir
 from .ui_helpers import page_header
@@ -545,6 +546,10 @@ class CounterRegistryPage(QWidget):
 
     def open_folder(self):
         self.folder.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(
-            QUrl.fromLocalFile(str(self.folder.resolve()))
-        )
+        opened, diagnostic = open_directory_native(self.folder)
+        if not opened:
+            QMessageBox.warning(
+                self,
+                "No se pudo abrir la carpeta",
+                f"Atlas no pudo abrir el administrador de archivos para:\n{self.folder.resolve()}\n\nDetalle:\n{diagnostic}",
+            )

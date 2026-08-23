@@ -1,34 +1,47 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-if not exist ".venv\Scripts\python.exe" py -m venv .venv
+
+echo ============================================================
+echo CodeCafe Atlas v1.0.24.24 - reproducible Windows build
+echo ============================================================
+
+rem Bootstrap first. This creates/reuses .venv and installs from packages\ cache.
+rem Internet is used only if the persistent local cache is incomplete.
+where py >nul 2>nul
+if not errorlevel 1 (
+    py bootstrap_dependencies.py
+) else (
+    python bootstrap_dependencies.py
+)
+if errorlevel 1 goto :error
+
+rem All regression/identity gates run inside the controlled environment.
+".venv\Scripts\python.exe" validate_public_identity.py
+if errorlevel 1 goto :error
+".venv\Scripts\python.exe" validate_full_functionality.py
 if errorlevel 1 goto :error
 ".venv\Scripts\python.exe" validate_before_build.py
 if errorlevel 1 goto :error
-".venv\Scripts\python.exe" validate_public_identity.py
+
+rem Build in LOCALAPPDATA, not directly inside OneDrive/synchronized source paths.
+rem build_windows_release.py performs a real local-path startup smoke test,
+rem then copies dist back and creates release\CodeCafe_Atlas_v1.0.24.24_Windows_x64.zip.
+".venv\Scripts\python.exe" build_windows_release.py
 if errorlevel 1 goto :error
-".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt
-if errorlevel 1 goto :error
-rmdir /s /q build 2>nul
-rmdir /s /q dist 2>nul
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --windowed --onedir --name "CodeCafe-Atlas" --add-data "modules;modules" --add-data "assets;assets" --icon "assets\codecafe_atlas_icon.ico" main.py
-if errorlevel 1 goto :error
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --windowed --onefile --name "CodeCafe-Atlas-Updater" --add-data "assets;assets" --icon "assets\codecafe_atlas_icon.ico" codecafe_atlas_updater.py
-if errorlevel 1 goto :error
-copy /y "dist\CodeCafe-Atlas-Updater.exe" "dist\CodeCafe-Atlas\CodeCafe-Atlas-Updater.exe" >nul
-if errorlevel 1 goto :error
-if not exist "dist\CodeCafe-Atlas\data" mkdir "dist\CodeCafe-Atlas\data"
-if not exist "dist\CodeCafe-Atlas\backups" mkdir "dist\CodeCafe-Atlas\backups"
-copy /y "CODECAFE_ATLAS_IDENTITY.json" "dist\CodeCafe-Atlas\CODECAFE_ATLAS_IDENTITY.json" >nul
-if errorlevel 1 goto :error
-del /q "dist\CodeCafe-Atlas-Updater.exe" 2>nul
-if not exist "dist\CodeCafe-Atlas\CodeCafe-Atlas.exe" goto :error
-if not exist "dist\CodeCafe-Atlas\CodeCafe-Atlas-Updater.exe" goto :error
-echo Compilacion v1.0.24.15 terminada y validada.
-echo .venv\Scripts\python.exe make_update_package.py --dist dist\CodeCafe-Atlas --version 1.0.24.15 --platform windows --architecture x86_64
+
+echo.
+echo Compilacion v1.0.24.24 terminada y validada.
+echo Distro: dist\CodeCafe-Atlas
+echo ZIP portable: release\CodeCafe_Atlas_v1.0.24.24_Windows_x64.zip
+echo Paquete de actualizacion opcional:
+echo .venv\Scripts\python.exe make_update_package.py --dist dist\CodeCafe-Atlas --version 1.0.24.24 --platform windows --architecture x86_64
 pause
 exit /b 0
+
 :error
-echo La compilacion fallo o la estructura final es incorrecta.
+echo.
+echo La compilacion fallo o una validacion no fue superada.
+echo No se acepta esta compilacion como release.
 pause
 exit /b 1

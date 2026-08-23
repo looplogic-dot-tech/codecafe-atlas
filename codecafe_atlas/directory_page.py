@@ -87,8 +87,11 @@ def _entry_type(row) -> str:
 
 
 class DependencyDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, database: Database, parent=None):
         super().__init__(parent)
+        self.database = database
+        self._building_rows = []
+        self._building_by_name = {}
         self.setModal(True)
         self.setWindowTitle("Información de la dependencia")
 
@@ -157,6 +160,12 @@ class DependencyDialog(QDialog):
         form.setHorizontalSpacing(18)
         form.setVerticalSpacing(10)
 
+        building_combo = QComboBox()
+        building_combo.setEditable(True)
+        building_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        building_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        building_combo.lineEdit().setPlaceholderText("Selecciona un edificio existente o escribe uno nuevo")
+
         self.fields = {
             "name": line_edit("Nombre completo de la dependencia"),
             "court": line_edit("Juzgado, si aplica"),
@@ -165,7 +174,7 @@ class DependencyDialog(QDialog):
             "cta": line_edit("CTA / encargado"),
             "phone": line_edit("Teléfono"),
             "email": line_edit("Correo electrónico"),
-            "building": line_edit("Edificio"),
+            "building": building_combo,
             "floor": line_edit("Piso"),
             "street": line_edit("Calle o avenida"),
             "exterior_number": line_edit("Número exterior"),
@@ -187,7 +196,17 @@ class DependencyDialog(QDialog):
         form.addRow("CTA / encargado", self.fields["cta"])
         form.addRow("Teléfono", self.fields["phone"])
         form.addRow("Correo", self.fields["email"])
-        form.addRow("Edificio", self.fields["building"])
+
+        building_row = QWidget()
+        building_layout = QHBoxLayout(building_row)
+        building_layout.setContentsMargins(0, 0, 0, 0)
+        building_layout.setSpacing(8)
+        building_layout.addWidget(self.fields["building"], 1)
+        self.add_building_inline_button = QPushButton("＋ Nuevo edificio")
+        self.add_building_inline_button.setObjectName("softButton")
+        self.add_building_inline_button.setToolTip("Crear un edificio nuevo con su dirección completa")
+        building_layout.addWidget(self.add_building_inline_button)
+        form.addRow("Edificio *", building_row)
         form.addRow("Piso", self.fields["floor"])
         inherited = QLabel("Dirección heredada del edificio. Para modificarla, usa Editar edificio.")
         inherited.setWordWrap(True)
@@ -234,6 +253,10 @@ class DependencyDialog(QDialog):
         footer_layout.addWidget(self.buttons)
         root.addWidget(footer)
 
+        self._reload_buildings()
+        self.fields["building"].currentTextChanged.connect(self._sync_inherited_address)
+        self.add_building_inline_button.clicked.connect(self._create_building_inline)
+
         # Ajusta el tamaño inicial a la pantalla disponible, especialmente útil
         # con escalado de 125 % o 150 % en Windows.
         screen = self.screen()
@@ -248,30 +271,124 @@ class DependencyDialog(QDialog):
         # Empieza siempre en la parte superior del formulario.
         self.form_scroll.verticalScrollBar().setValue(0)
 
+    def _reload_buildings(self, selected_name: str = "") -> None:
+        combo = self.fields["building"]
+        current = selected_name or combo.currentText().strip()
+        self._building_rows = list(self.database.list_buildings())
+        self._building_by_name = {str(row["name"] or "").strip().casefold(): row for row in self._building_rows}
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("")
+        for row in self._building_rows:
+            combo.addItem(str(row["name"] or "").strip(), int(row["id"]))
+        combo.setCurrentText(current)
+        combo.blockSignals(False)
+        self._sync_inherited_address(combo.currentText())
+
+    def _sync_inherited_address(self, building_name: str) -> None:
+        row = self._building_by_name.get(str(building_name or "").strip().casefold())
+        for key in ("street", "exterior_number", "colony", "postal_code", "city", "state"):
+            value = str(row[key] or "") if row is not None else ""
+            self.fields[key].setText(value)
+
+    def _confirm_new_building_name(self, name: str) -> bool:
+        name = str(name or "").strip()
+        if not name:
+            QMessageBox.warning(self, "Falta edificio", "Selecciona un edificio existente o crea uno nuevo.")
+            return False
+        exact = self._building_by_name.get(name.casefold())
+        if exact is not None:
+            return True
+        matches = self.database.similar_buildings(name)
+        equivalent = next((item for item in matches if float(item["score"]) >= 0.999), None)
+        if equivalent is not None:
+            QMessageBox.warning(
+                self,
+                "Edificio ya existente",
+                f'“{name}” equivale al edificio existente “{equivalent["name"]}”.\n\n'
+                "Atlas no creará un duplicado. Selecciona el edificio existente en la lista.",
+            )
+            self.fields["building"].setCurrentText(str(equivalent["name"]))
+            return False
+        if not matches:
+            return True
+        lines = [f"• {item['name']} ({item['score']:.0%} similar)" for item in matches[:5]]
+        answer = QMessageBox.question(
+            self,
+            "Posible edificio duplicado",
+            "Atlas encontró nombres de edificio muy similares:\n\n" + "\n".join(lines) +
+            "\n\n¿Confirmas que deseas usar un edificio NUEVO y diferente?",
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _create_building_inline(self) -> None:
+        dialog = BuildingDialog(self)
+        dialog.set_values()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.values()
+        name = str(values.get("name") or "").strip()
+        if not name:
+            QMessageBox.warning(self, "Falta información", "Escribe el nombre del edificio.")
+            return
+        exact = self._building_by_name.get(name.casefold())
+        if exact is not None:
+            QMessageBox.information(
+                self, "Edificio existente",
+                f'Ya existe “{exact["name"]}”. Atlas lo seleccionará y no creará un duplicado.',
+            )
+            self.fields["building"].setCurrentText(str(exact["name"]))
+            return
+        if not self._confirm_new_building_name(name):
+            return
+        try:
+            self.database.save_building(values)
+        except Exception as error:
+            QMessageBox.critical(self, "No se pudo guardar", str(error))
+            return
+        self._reload_buildings(name)
+
+    def accept(self) -> None:
+        building_name = self.fields["building"].currentText().strip()
+        if not self._confirm_new_building_name(building_name):
+            return
+        super().accept()
+
     def set_values(self, row=None):
-        for widget in self.fields.values():
-            widget.clear()
+        # Preserve the building catalog while clearing only editable values.
+        for key, widget in self.fields.items():
+            if isinstance(widget, QComboBox):
+                widget.setCurrentText("")
+            elif isinstance(widget, QTextEdit):
+                widget.clear()
+            else:
+                widget.clear()
 
         if row is None:
             self.setWindowTitle("Nueva entrada")
+            self._sync_inherited_address("")
             return
 
         self.setWindowTitle("Información de la dependencia")
         for key, widget in self.fields.items():
             value = str(row[key] or "")
-            if isinstance(widget, QTextEdit):
+            if isinstance(widget, QComboBox):
+                widget.setCurrentText(value)
+            elif isinstance(widget, QTextEdit):
                 widget.setPlainText(value)
             else:
                 widget.setText(value)
+        self._sync_inherited_address(self.fields["building"].currentText())
 
     def values(self) -> dict[str, str]:
         result = {}
         for key, widget in self.fields.items():
-            result[key] = (
-                widget.toPlainText().strip()
-                if isinstance(widget, QTextEdit)
-                else widget.text().strip()
-            )
+            if isinstance(widget, QComboBox):
+                result[key] = widget.currentText().strip()
+            elif isinstance(widget, QTextEdit):
+                result[key] = widget.toPlainText().strip()
+            else:
+                result[key] = widget.text().strip()
         return result
 
 
@@ -1336,6 +1453,8 @@ class DirectoryPage(QWidget):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         values = dialog.values()
+        if not self._confirm_similar_building(str(values.get("name") or "")):
+            return
         try:
             self.database.save_building(values)
         except Exception as error:
@@ -1357,8 +1476,11 @@ class DirectoryPage(QWidget):
         dialog.set_values(row)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        values = dialog.values()
+        if not self._confirm_similar_building(str(values.get("name") or ""), building_id):
+            return
         try:
-            self.database.save_building(dialog.values(), building_id)
+            self.database.save_building(values, building_id)
         except Exception as error:
             QMessageBox.critical(self, "No se pudo guardar", str(error))
             return
@@ -1366,14 +1488,46 @@ class DirectoryPage(QWidget):
         if self.on_dependencies_changed:
             self.on_dependencies_changed()
 
+    def _confirm_similar_building(self, name: str, building_id: int | None = None) -> bool:
+        matches = self.database.similar_buildings(name, building_id)
+        if not matches:
+            return True
+        lines = [f"• {item['name']} ({item['score']:.0%} similar)" for item in matches[:5]]
+        answer = QMessageBox.question(
+            self, "Posible edificio duplicado",
+            "Atlas encontró nombres muy similares:\n\n" + "\n".join(lines) +
+            "\n\n¿Confirmas que deseas guardar un edificio diferente?",
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _confirm_similar_dependency(self, values: dict[str, object], dependency_id: int | None = None) -> bool:
+        matches = self.database.similar_dependencies(
+            str(values.get("building") or ""), str(values.get("name") or ""),
+            floor=str(values.get("floor") or ""), exclude_id=dependency_id,
+        )
+        if not matches:
+            return True
+        lines = [
+            f"• {item['name']} — piso {item['floor'] or 'sin especificar'} ({item['score']:.0%} similar)"
+            for item in matches[:5]
+        ]
+        answer = QMessageBox.question(
+            self, "Posible dependencia duplicada",
+            "Atlas encontró dependencias muy similares en el mismo edificio:\n\n" + "\n".join(lines) +
+            "\n\nNo se fusionará nada automáticamente. ¿Confirmas que esta es una dependencia distinta?",
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
     def new_entry(self):
-        dialog = DependencyDialog(self)
+        dialog = DependencyDialog(self.database, self)
         dialog.set_values()
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         values = dialog.values()
         if not values["name"]:
             QMessageBox.warning(self, "Falta información", "Escribe el nombre de la dependencia.")
+            return
+        if not self._confirm_similar_dependency(values):
             return
         try:
             self.database.save_dependency(values)
@@ -1392,13 +1546,15 @@ class DirectoryPage(QWidget):
         if row is None:
             QMessageBox.warning(self, "Entrada no encontrada", "La dependencia ya no está disponible.")
             return
-        dialog = DependencyDialog(self)
+        dialog = DependencyDialog(self.database, self)
         dialog.set_values(row)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         values = dialog.values()
         if not values["name"]:
             QMessageBox.warning(self, "Falta información", "Escribe el nombre de la dependencia.")
+            return
+        if not self._confirm_similar_dependency(values, dependency_id):
             return
         try:
             self.database.save_dependency(values, dependency_id)

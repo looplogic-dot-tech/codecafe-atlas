@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .platform_open import open_directory_native
 from .pdf_duplicate_tools import (
     DuplicateScanCancelled,
     find_exact_duplicate_groups,
@@ -646,13 +647,13 @@ class PdfLibraryPage(QWidget):
     def open_containing_folder(self) -> None:
         if self.current_path is None:
             return
-        try:
-            if sys.platform.startswith("win"):
-                subprocess.Popen(["explorer", "/select,", str(self.current_path)])
-            else:
-                self._open_path(self.current_path.parent)
-        except OSError as error:
-            QMessageBox.warning(self, "No se pudo abrir la ubicación", str(error))
+        opened, diagnostic = open_directory_native(self.current_path.parent)
+        if not opened:
+            QMessageBox.warning(
+                self,
+                "No se pudo abrir la ubicación",
+                f"Atlas no pudo abrir el administrador de archivos para:\n{self.current_path.parent}\n\nDetalle:\n{diagnostic}",
+            )
 
     @staticmethod
     def _open_path(path: Path) -> None:

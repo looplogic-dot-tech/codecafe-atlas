@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import shutil
 import sqlite3
@@ -102,6 +103,8 @@ class SyncPlan:
     items: list[SyncItem]
     summary: dict[str, dict[str, int]]
     compatibility_note: str = ""
+    local_fingerprint: str = ""
+    external_fingerprint: str = ""
     _temporary: Any = None
 
     def close(self) -> None:
@@ -366,6 +369,20 @@ class SyncEngine:
         return {key: SyncEngine.norm(value) for key, value in payload.items()}
 
     @staticmethod
+    def _database_fingerprint(connection: sqlite3.Connection) -> str:
+        """Stable logical fingerprint of the Atlas data used by homologation."""
+        digest = hashlib.sha256()
+        for table in (*[CANONICAL_TABLE[name] for name in SYNC_TABLES], "atlas_sync_records"):
+            cols = [row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')]
+            if not cols:
+                continue
+            digest.update(table.encode("utf-8"))
+            order = ", ".join(f'"{col}"' for col in cols)
+            for row in connection.execute(f'SELECT {order} FROM "{table}" ORDER BY rowid'):
+                digest.update(json.dumps(list(row), ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8"))
+        return digest.hexdigest()
+
+    @staticmethod
     def _difference(local_payload: dict[str, Any], external_payload: dict[str, Any]) -> str:
         left = SyncEngine._normalized_payload(local_payload)
         right = SyncEngine._normalized_payload(external_payload)
@@ -378,6 +395,8 @@ class SyncEngine:
         summary: dict[str, dict[str, int]] = {}
 
         with self.connect(self.local_path, True) as local, self.connect(external_prepared, True) as external:
+            local_fingerprint = self._database_fingerprint(local)
+            external_fingerprint = self._database_fingerprint(external)
             for table in SYNC_TABLES:
                 physical = CANONICAL_TABLE[table]
                 local_cols = self.cols(local, physical)
@@ -528,7 +547,7 @@ class SyncEngine:
                     )
                 summary[table] = counts
 
-        return SyncPlan(self.local_path, self.external_path, external_prepared, items, summary, note, temporary)
+        return SyncPlan(self.local_path, self.external_path, external_prepared, items, summary, note, local_fingerprint, external_fingerprint, temporary)
 
     def _backup(self) -> Path:
         directory = self.local_path.parent.parent / "backups"
@@ -571,6 +590,8 @@ class SyncEngine:
             "VALUES(?,?,?,?,?,?,?) "
             "ON CONFLICT(entity_type,entity_id) DO UPDATE SET "
             "record_uuid=excluded.record_uuid, revision=MAX(atlas_sync_records.revision,excluded.revision), "
+            "created_by_installation=CASE WHEN excluded.record_uuid<>atlas_sync_records.record_uuid "
+            "THEN excluded.created_by_installation ELSE atlas_sync_records.created_by_installation END, "
             "updated_by_installation=excluded.updated_by_installation, deleted_at=excluded.deleted_at",
             (entity_type, entity_id, *values),
         )
@@ -584,6 +605,10 @@ class SyncEngine:
 
         try:
             with self.connect(self.local_path) as local, self.connect(plan.external_prepared, True) as external:
+                if self._database_fingerprint(local) != plan.local_fingerprint:
+                    raise ValueError("La base local cambió desde el análisis. Analiza nuevamente antes de homologar.")
+                if self._database_fingerprint(external) != plan.external_fingerprint:
+                    raise ValueError("La base externa cambió desde el análisis. Analiza nuevamente antes de homologar.")
                 local.execute("BEGIN IMMEDIATE")
 
                 for table in SYNC_TABLES:
@@ -609,6 +634,10 @@ class SyncEngine:
                             stats["coincidentes"] += 1
                             if item.local_id is not None:
                                 id_map[table][item.external_id] = item.local_id
+                                if table in SYNC_IDENTITY_TYPE:
+                                    self._upsert_sync_identity(
+                                        local, table, int(item.local_id), item.record_uuid, external, int(item.external_id)
+                                    )
                             continue
 
                         if item.decision in ("Conservar local", "Ignorar", "Sin cambios"):
@@ -646,6 +675,10 @@ class SyncEngine:
                             )
                             new_id = target
                             stats["actualizados"] += 1
+                            if table in SYNC_IDENTITY_TYPE:
+                                self._upsert_sync_identity(
+                                    local, table, int(new_id), item.record_uuid, external, int(item.external_id)
+                                )
                         else:
                             columns = list(values)
                             marks = ", ".join("?" for _ in columns)
@@ -698,7 +731,7 @@ class SyncEngine:
         output.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         data = {
-            "version": "1.0.24.15",
+            "version": "1.0.24.24",
             "fecha": datetime.now().isoformat(timespec="seconds"),
             "base_local": str(self.local_path),
             "base_externa": str(self.external_path),

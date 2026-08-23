@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import shutil
+import unicodedata
+from difflib import SequenceMatcher
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -254,56 +256,12 @@ class Database:
 
     @staticmethod
     def _initialize_service_formats(connection: sqlite3.Connection) -> None:
-        """Create useful starter formats only when the catalog is empty."""
-        count = int(connection.execute(
-            "SELECT COUNT(*) FROM service_formats"
-        ).fetchone()[0])
-        if count:
-            return
+        """Keep a newly created Atlas database operationally empty.
 
-        starter_formats = (
-            {
-                "name": "Tóner",
-                "description": "Atención y sustitución de consumible de tóner.",
-                "reported_issue": (
-                    "Se acude a sitio, se saca una hoja de estado de consumibles para "
-                    "verificar los niveles de tóner, se valida que hace falta un tóner "
-                    "nuevo, se cambia, se valida con el usuario que pueda imprimir "
-                    "correctamente y se firma conformidad."
-                ),
-            },
-            {
-                "name": "Vincular impresora",
-                "description": "Instalación o vinculación de una impresora para el usuario.",
-                "reported_issue": (
-                    "Se acude a sitio y se verifica que el usuario no pueda mandar a "
-                    "imprimir. Se detecta que el usuario cambió de sistema operativo y "
-                    "no tiene la impresora instalada. Se instala la impresora y se "
-                    "verifica que el usuario pueda mandar a imprimir correctamente."
-                ),
-            },
-            {
-                "name": "Escáner Ricoh",
-                "description": "Corrección de la ruta o IP de escaneo en equipo Ricoh.",
-                "reported_issue": (
-                    "Se acude a sitio y se valida el error reportado por el usuario. "
-                    "La IP de la PC del usuario cambió y ya no tiene conexión con la "
-                    "impresora. Se ingresa al Command Center de la impresora y se agrega "
-                    "la nueva IP asignada a la PC. El usuario realiza una prueba y puede "
-                    "escanear correctamente."
-                ),
-            },
-        )
-        for item in starter_formats:
-            connection.execute(
-                """
-                INSERT INTO service_formats (
-                    name, document_type, description, reported_issue,
-                    equipment_operates, equipment_condition, active
-                ) VALUES (?, 'Cédula de Servicio', ?, ?, 'Sí', 'No', 1)
-                """,
-                (item["name"], item["description"], item["reported_issue"]),
-            )
+        Existing databases retain any service formats they already contain; this
+        initializer deliberately does not seed sample/operational records.
+        """
+        return
 
     @staticmethod
     def _ensure_column(
@@ -591,6 +549,87 @@ class Database:
         )
         return int(cursor.lastrowid)
 
+    @staticmethod
+    def _normalize_organizational_name(value: Any) -> str:
+        """Canonicalize organization labels for duplicate and similarity checks."""
+        text = unicodedata.normalize("NFKD", str(value or "").casefold())
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+        number_words = {
+            "primero": "1", "primer": "1", "primera": "1", "uno": "1",
+            "segundo": "2", "segunda": "2", "dos": "2",
+            "tercero": "3", "tercer": "3", "tercera": "3", "tres": "3",
+            "cuarto": "4", "cuarta": "4", "cuatro": "4",
+            "quinto": "5", "quinta": "5", "cinco": "5",
+            "sexto": "6", "sexta": "6", "seis": "6",
+            "septimo": "7", "septima": "7", "siete": "7",
+            "octavo": "8", "octava": "8", "ocho": "8",
+            "noveno": "9", "novena": "9", "nueve": "9",
+            "decimo": "10", "decima": "10", "diez": "10",
+            "undecimo": "11", "undecima": "11", "once": "11",
+            "duodecimo": "12", "duodecima": "12", "doce": "12",
+        }
+        tokens = re.findall(r"[a-z0-9]+", text)
+        normalized = [number_words.get(token, token) for token in tokens]
+        return " ".join(normalized)
+
+    @classmethod
+    def _organizational_similarity(cls, left: Any, right: Any) -> float:
+        """Similarity score robust to punctuation, word order and common numbering styles."""
+        a = cls._normalize_organizational_name(left)
+        b = cls._normalize_organizational_name(right)
+        if not a or not b:
+            return 0.0
+        if a == b:
+            return 1.0
+        ta, tb = a.split(), b.split()
+        sa, sb = " ".join(sorted(ta)), " ".join(sorted(tb))
+        sequence = max(SequenceMatcher(None, a, b).ratio(), SequenceMatcher(None, sa, sb).ratio())
+        aset, bset = set(ta), set(tb)
+        jaccard = len(aset & bset) / max(1, len(aset | bset))
+        containment = len(aset & bset) / max(1, min(len(aset), len(bset)))
+        return max(sequence, jaccard, containment * 0.96)
+
+    def similar_buildings(self, name: str, exclude_id: int | None = None) -> list[dict[str, Any]]:
+        incoming = self._normalize_organizational_name(name)
+        if not incoming:
+            return []
+        with self.connect() as connection:
+            rows = connection.execute("SELECT id,name FROM atlas_buildings ORDER BY name COLLATE NOCASE").fetchall()
+        result = []
+        for row in rows:
+            if exclude_id is not None and int(row["id"]) == int(exclude_id):
+                continue
+            score = self._organizational_similarity(name, row["name"])
+            if score >= 0.80:
+                result.append({"id": int(row["id"]), "name": str(row["name"]), "score": score})
+        return sorted(result, key=lambda item: (-item["score"], item["name"].casefold()))
+
+    def similar_dependencies(
+        self, building_name: str, name: str, *, floor: str = "", exclude_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        incoming = self._normalize_organizational_name(name)
+        if not incoming:
+            return []
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT d.id,d.name,d.floor,b.name AS building
+                   FROM atlas_dependencies d JOIN atlas_buildings b ON b.id=d.building_id
+                   WHERE b.name=? COLLATE NOCASE AND d.active=1
+                   ORDER BY d.name COLLATE NOCASE""",
+                (str(building_name or "").strip(),),
+            ).fetchall()
+        result = []
+        for row in rows:
+            if exclude_id is not None and int(row["id"]) == int(exclude_id):
+                continue
+            score = self._organizational_similarity(name, row["name"])
+            if score >= 0.80:
+                result.append({
+                    "id": int(row["id"]), "name": str(row["name"]),
+                    "floor": str(row["floor"] or ""), "building": str(row["building"] or ""), "score": score,
+                })
+        return sorted(result, key=lambda item: (-item["score"], item["name"].casefold()))
+
     def save_building(self, values: dict[str, Any], building_id: int | None = None) -> int:
         """Save the single authoritative detailed address for a building."""
         name=str(values.get("name") or "").strip()
@@ -601,11 +640,13 @@ class Database:
         data["country"]=data["country"] or "México"
         params=(name,data["street"],data["exterior_number"],data["colony"],data["city"],data["state"],data["postal_code"],data["country"],data["notes"])
         with self.connect() as connection:
-            duplicate=connection.execute(
-                "SELECT id FROM atlas_buildings WHERE name=? COLLATE NOCASE AND (? IS NULL OR id<>?)",
-                (name,building_id,building_id)).fetchone()
-            if duplicate is not None:
-                raise ValueError("Ya existe un edificio con ese nombre.")
+            duplicate_rows=connection.execute("SELECT id,name FROM atlas_buildings").fetchall()
+            incoming_key=self._normalize_organizational_name(name)
+            for duplicate in duplicate_rows:
+                if building_id is not None and int(duplicate["id"]) == int(building_id):
+                    continue
+                if self._normalize_organizational_name(duplicate["name"]) == incoming_key:
+                    raise ValueError(f"Ya existe un edificio equivalente: {duplicate['name']}.")
             if building_id is None:
                 cursor=connection.execute("""INSERT INTO atlas_buildings
                     (name,street,exterior_number,colony,city,state,postal_code,country,notes)
@@ -618,6 +659,13 @@ class Database:
             return int(building_id)
 
     def directory_equipment(self) -> dict[int, list[sqlite3.Row]]:
+        """Return each canonical equipment record exactly once, grouped by dependency.
+
+        Directory and Inventory are two views of the same ``atlas_equipment``
+        table.  Do not use the legacy ``equipment`` compatibility view here:
+        synchronization/relationship compatibility rows can multiply JOIN
+        cardinality and make Directory report more equipment than Inventory.
+        """
         with self.connect() as connection:
             rows = connection.execute(
                 """
@@ -626,11 +674,11 @@ class Database:
                        e.hostname, e.status,
                        (
                            SELECT cr.total_prints
-                           FROM counter_records cr
+                           FROM atlas_counter_readings cr
                            WHERE cr.equipment_id=e.id
                               OR (cr.equipment_id IS NULL
-                                  AND cr.serial_number<>''
-                                  AND lower(replace(replace(replace(cr.serial_number, '-', ''), ' ', ''), '.', ''))
+                                  AND cr.serial_snapshot<>''
+                                  AND lower(replace(replace(replace(cr.serial_snapshot, '-', ''), ' ', ''), '.', ''))
                                       = lower(replace(replace(replace(e.serial_number, '-', ''), ' ', ''), '.', '')))
                            ORDER BY
                                CASE WHEN cr.reading_date='' THEN 1 ELSE 0 END,
@@ -639,21 +687,21 @@ class Database:
                        ) AS latest_counter,
                        (
                            SELECT cr.reading_date
-                           FROM counter_records cr
+                           FROM atlas_counter_readings cr
                            WHERE cr.equipment_id=e.id
                               OR (cr.equipment_id IS NULL
-                                  AND cr.serial_number<>''
-                                  AND lower(replace(replace(replace(cr.serial_number, '-', ''), ' ', ''), '.', ''))
+                                  AND cr.serial_snapshot<>''
+                                  AND lower(replace(replace(replace(cr.serial_snapshot, '-', ''), ' ', ''), '.', ''))
                                       = lower(replace(replace(replace(e.serial_number, '-', ''), ' ', ''), '.', '')))
                            ORDER BY
                                CASE WHEN cr.reading_date='' THEN 1 ELSE 0 END,
                                cr.reading_date DESC, cr.id DESC
                            LIMIT 1
                        ) AS latest_counter_date
-                FROM equipment e
+                FROM atlas_equipment e
                 ORDER BY e.dependency_id, e.equipment_type COLLATE NOCASE,
                          e.brand COLLATE NOCASE, e.model COLLATE NOCASE,
-                         e.serial_number COLLATE NOCASE
+                         e.serial_number COLLATE NOCASE, e.id
                 """
             ).fetchall()
         result: dict[int, list[sqlite3.Row]] = {}
@@ -721,7 +769,7 @@ class Database:
 
             uid = str(record_uid or "").strip() or str(uuid.uuid4())
             existing = connection.execute(
-                "SELECT source_file, format_type FROM counter_records WHERE record_uid=?",
+                "SELECT source_file, format_type FROM atlas_counter_readings WHERE external_uid=?",
                 (uid,),
             ).fetchone()
             source_file = str(existing["source_file"] or "") if existing else ""
@@ -731,17 +779,17 @@ class Database:
             )
             connection.execute(
                 """
-                INSERT INTO counter_records (
-                    record_uid, equipment_id, reading_date, serial_number,
-                    model, source_file, total_prints, office_prints,
+                INSERT INTO atlas_counter_readings (
+                    external_uid, equipment_id, reading_date, serial_snapshot,
+                    model_snapshot, source_file, total_prints, office_prints,
                     letter_prints, duplex_sheets, jam_events,
                     misfeed_events, economode_prints, format_type
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(record_uid) DO UPDATE SET
+                ON CONFLICT(external_uid) DO UPDATE SET
                     equipment_id=excluded.equipment_id,
                     reading_date=excluded.reading_date,
-                    serial_number=excluded.serial_number,
-                    model=excluded.model,
+                    serial_snapshot=excluded.serial_snapshot,
+                    model_snapshot=excluded.model_snapshot,
                     total_prints=excluded.total_prints,
                     office_prints=excluded.office_prints,
                     letter_prints=excluded.letter_prints,
@@ -1241,46 +1289,45 @@ class Database:
             source.close()
 
     def list_dependencies(self, search: str = "") -> list[sqlite3.Row]:
+        """Return one row per canonical dependency.
+
+        Office and CTA are display attributes selected deterministically from
+        their normalized relationship tables.  Correlated subqueries prevent
+        multiple CTA/office rows from duplicating a dependency in Directory.
+        """
         pattern = f"%{search.strip()}%"
         query = """
             SELECT
-                d.id,
-                d.location_id,
-                d.name,
-                d.court,
-                d.tribunal,
-                d.office,
-                d.cta,
-                d.phone,
-                d.email,
-                d.notes,
-                COALESCE(b.id, l.building_id) AS building_id,
-                COALESCE(b.name, l.building) AS building,
-                COALESCE(b.address, '') AS building_address,
-                l.city,
-                l.state,
-                l.street,
-                l.exterior_number,
-                l.colony,
-                l.postal_code,
-                l.floor
-            FROM dependencies d
-            JOIN locations l ON l.id = d.location_id
-            LEFT JOIN buildings b ON b.id = l.building_id
-            WHERE d.active = 1
+                d.id, d.id AS location_id, d.name, d.court, d.tribunal,
+                COALESCE((SELECT o.name FROM atlas_offices o
+                          WHERE o.dependency_id=d.id ORDER BY o.id LIMIT 1), '') AS office,
+                COALESCE((SELECT p.full_name
+                          FROM atlas_dependency_people dp
+                          JOIN atlas_people p ON p.id=dp.person_id
+                          WHERE dp.dependency_id=d.id AND lower(dp.role)='cta'
+                          ORDER BY dp.person_id LIMIT 1), '') AS cta,
+                d.phone, d.email, d.notes, b.id AS building_id, b.name AS building,
+                trim(b.street ||
+                     CASE WHEN trim(b.exterior_number)<>'' THEN ' '||b.exterior_number ELSE '' END ||
+                     CASE WHEN trim(b.colony)<>'' THEN ', '||b.colony ELSE '' END ||
+                     CASE WHEN trim(b.city)<>'' THEN ', '||b.city ELSE '' END ||
+                     CASE WHEN trim(b.state)<>'' THEN ', '||b.state ELSE '' END ||
+                     CASE WHEN trim(b.postal_code)<>'' THEN ' C.P. '||b.postal_code ELSE '' END ||
+                     CASE WHEN trim(b.country)<>'' THEN ', '||b.country ELSE '' END) AS building_address,
+                b.city, b.state, b.street, b.exterior_number, b.colony, b.postal_code, d.floor
+            FROM atlas_dependencies d
+            JOIN atlas_buildings b ON b.id=d.building_id
+            WHERE d.active=1
               AND (
-                ? = '%%'
-                OR d.name LIKE ?
-                OR d.court LIKE ?
-                OR d.tribunal LIKE ?
-                OR d.office LIKE ?
-                OR d.cta LIKE ?
-                OR COALESCE(b.name, l.building) LIKE ?
-                OR COALESCE(b.address, '') LIKE ?
-                OR l.floor LIKE ?
+                ?='%%' OR d.name LIKE ? OR d.court LIKE ? OR d.tribunal LIKE ?
+                OR COALESCE((SELECT o.name FROM atlas_offices o WHERE o.dependency_id=d.id ORDER BY o.id LIMIT 1),'') LIKE ?
+                OR COALESCE((SELECT p.full_name FROM atlas_dependency_people dp JOIN atlas_people p ON p.id=dp.person_id
+                             WHERE dp.dependency_id=d.id AND lower(dp.role)='cta' ORDER BY dp.person_id LIMIT 1),'') LIKE ?
+                OR b.name LIKE ?
+                OR trim(b.street||' '||b.exterior_number||' '||b.colony||' '||b.city||' '||b.state||' '||b.postal_code) LIKE ?
+                OR d.floor LIKE ?
               )
-            ORDER BY COALESCE(b.name, l.building) COLLATE NOCASE,
-                     l.floor COLLATE NOCASE, d.name COLLATE NOCASE
+            ORDER BY b.name COLLATE NOCASE, d.floor COLLATE NOCASE, d.name COLLATE NOCASE, d.id
         """
         with self.connect() as connection:
             return list(connection.execute(query, (pattern,) * 9).fetchall())
@@ -1294,10 +1341,20 @@ class Database:
         with self.connect() as connection:
             building_name = str(values.get("building", "") or "").strip() or "Sin edificio"
             row = connection.execute(
-                "SELECT id FROM atlas_buildings WHERE name=? COLLATE NOCASE",
+                "SELECT id,name FROM atlas_buildings WHERE name=? COLLATE NOCASE",
                 (building_name,),
             ).fetchone()
             if row is None:
+                # Never allow a dependency save path to silently create an equivalent
+                # building under alternate punctuation, accents, word order or numbering.
+                incoming_building_key = " ".join(sorted(self._normalize_organizational_name(building_name).split()))
+                for existing_building in connection.execute("SELECT id,name FROM atlas_buildings").fetchall():
+                    existing_key = " ".join(sorted(self._normalize_organizational_name(existing_building["name"]).split()))
+                    if incoming_building_key and existing_key == incoming_building_key:
+                        raise ValueError(
+                            f"Ya existe un edificio equivalente: {existing_building['name']}. "
+                            "Selecciona el edificio existente en la lista."
+                        )
                 cursor = connection.execute(
                     """INSERT INTO atlas_buildings
                     (name, city, state, street, exterior_number, colony, postal_code)
@@ -1310,6 +1367,20 @@ class Database:
             else:
                 # Dependencies inherit address from the building.
                 building_id = int(row["id"])
+            # Block exact/equivalent duplicate dependencies even when punctuation, accents,
+            # word order or numbering style differ. Near matches are confirmed by the UI.
+            incoming_key = " ".join(sorted(self._normalize_organizational_name(values["name"]).split()))
+            existing_dependencies = connection.execute(
+                "SELECT id,name FROM atlas_dependencies WHERE building_id=? AND active=1",
+                (building_id,),
+            ).fetchall()
+            for existing in existing_dependencies:
+                if dependency_id is not None and int(existing["id"]) == int(dependency_id):
+                    continue
+                existing_key = " ".join(sorted(self._normalize_organizational_name(existing["name"]).split()))
+                if incoming_key and existing_key == incoming_key:
+                    raise ValueError(f"Ya existe una dependencia equivalente en este edificio: {existing['name']}.")
+
             if dependency_id is None:
                 cursor = connection.execute(
                     """INSERT INTO atlas_dependencies
@@ -1630,38 +1701,41 @@ class Database:
 
 
     def dependency_choices_detailed(self) -> list[sqlite3.Row]:
+        """Canonical dependency choices for service documents; one row per dependency."""
         with self.connect() as connection:
             return list(connection.execute(
                 """
-                SELECT
-                    d.id, d.name, d.court, d.tribunal, d.office, d.cta,
-                    d.phone, d.email, d.notes,
-                    l.building, l.floor, l.city, l.state, l.street,
-                    l.exterior_number, l.colony, l.postal_code
-                FROM dependencies d
-                JOIN locations l ON l.id = d.location_id
-                WHERE d.active = 1
-                ORDER BY l.building COLLATE NOCASE, l.floor COLLATE NOCASE,
-                         d.name COLLATE NOCASE
+                SELECT d.id,d.name,d.court,d.tribunal,
+                       COALESCE((SELECT o.name FROM atlas_offices o WHERE o.dependency_id=d.id ORDER BY o.id LIMIT 1),'') AS office,
+                       COALESCE((SELECT p.full_name FROM atlas_dependency_people dp JOIN atlas_people p ON p.id=dp.person_id
+                                 WHERE dp.dependency_id=d.id AND lower(dp.role)='cta' ORDER BY dp.person_id LIMIT 1),'') AS cta,
+                       d.phone,d.email,d.notes, b.name AS building,d.floor,b.city,b.state,b.street,
+                       b.exterior_number,b.colony,b.postal_code
+                FROM atlas_dependencies d
+                JOIN atlas_buildings b ON b.id=d.building_id
+                WHERE d.active=1
+                ORDER BY b.name COLLATE NOCASE,d.floor COLLATE NOCASE,d.name COLLATE NOCASE,d.id
                 """
             ).fetchall())
 
     def equipment_choices_detailed(self) -> list[sqlite3.Row]:
+        """Canonical equipment choices for service documents; one row per equipment record."""
         with self.connect() as connection:
             return list(connection.execute(
                 """
-                SELECT
-                    e.id, e.dependency_id, e.equipment_type, e.brand, e.model,
-                    e.serial_number, e.inventory_number, e.ip_address, e.hostname, e.status,
-                    d.name AS dependency_name, d.office, d.cta, d.phone,
-                    d.phone AS dependency_phone, d.email,
-                    l.building, l.floor, l.city, l.state, l.street,
-                    l.exterior_number, l.colony, l.postal_code
-                FROM equipment e
-                JOIN dependencies d ON d.id = e.dependency_id
-                JOIN locations l ON l.id = d.location_id
-                ORDER BY d.name COLLATE NOCASE, e.equipment_type COLLATE NOCASE,
-                         e.model COLLATE NOCASE, e.serial_number COLLATE NOCASE
+                SELECT e.id,e.dependency_id,e.equipment_type,e.brand,e.model,e.serial_number,e.inventory_number,
+                       e.ip_address,e.hostname,e.status,d.name AS dependency_name,
+                       COALESCE((SELECT o.name FROM atlas_offices o WHERE o.id=e.office_id LIMIT 1),
+                                (SELECT o.name FROM atlas_offices o WHERE o.dependency_id=d.id ORDER BY o.id LIMIT 1),'') AS office,
+                       COALESCE((SELECT p.full_name FROM atlas_dependency_people dp JOIN atlas_people p ON p.id=dp.person_id
+                                 WHERE dp.dependency_id=d.id AND lower(dp.role)='cta' ORDER BY dp.person_id LIMIT 1),'') AS cta,
+                       d.phone,d.phone AS dependency_phone,d.email,b.name AS building,d.floor,b.city,b.state,b.street,
+                       b.exterior_number,b.colony,b.postal_code
+                FROM atlas_equipment e
+                JOIN atlas_dependencies d ON d.id=e.dependency_id
+                JOIN atlas_buildings b ON b.id=d.building_id
+                WHERE d.active=1
+                ORDER BY d.name COLLATE NOCASE,e.equipment_type COLLATE NOCASE,e.model COLLATE NOCASE,e.serial_number COLLATE NOCASE,e.id
                 """
             ).fetchall())
 
@@ -1915,24 +1989,24 @@ class Database:
                 )
 
                 exists = connection.execute(
-                    "SELECT 1 FROM counter_records WHERE record_uid = ?",
+                    "SELECT 1 FROM atlas_counter_readings WHERE external_uid = ?",
                     (record_uid,),
                 ).fetchone()
 
                 connection.execute(
                     """
-                    INSERT INTO counter_records (
-                        record_uid, equipment_id, reading_date, serial_number,
-                        model, source_file, total_prints, office_prints,
+                    INSERT INTO atlas_counter_readings (
+                        external_uid, equipment_id, reading_date, serial_snapshot,
+                        model_snapshot, source_file, total_prints, office_prints,
                         letter_prints, duplex_sheets, jam_events,
                         misfeed_events, economode_prints, format_type
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(record_uid) DO UPDATE SET
+                    ON CONFLICT(external_uid) DO UPDATE SET
                         equipment_id = excluded.equipment_id,
                         reading_date = excluded.reading_date,
-                        serial_number = excluded.serial_number,
-                        model = excluded.model,
+                        serial_snapshot = excluded.serial_snapshot,
+                        model_snapshot = excluded.model_snapshot,
                         source_file = excluded.source_file,
                         total_prints = excluded.total_prints,
                         office_prints = excluded.office_prints,

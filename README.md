@@ -1,4 +1,23 @@
-# CodeCafe Atlas v1.0.24.15
+# CodeCafe Atlas v1.0.24.24
+
+## v1.0.24.24 — reproducible/offline build maintenance
+
+This release preserves the v1.0.24.23 functional baseline while replacing the fragile build bootstrap with a persistent offline package cache. Windows builds now install dependencies before validation, reuse compatible cached packages, safely recreate stale build outputs, build/smoke-test from a local staging path, and generate a portable ZIP under `release/`. See `WINDOWS_BUILD_README.md`.
+
+## Recuperación funcional acumulativa
+
+Esta fuente protege como contrato acumulativo las funciones verificadas de las versiones preservadas. Antes de compilar, `validate_before_build.py` ejecuta también `validate_full_functionality.py` para detectar regresiones de Directorio, Inventario, Administración de datos, contadores, Insertador, Separador, Visor PDF, Órdenes, Formatos, Homologación, backups y updater.
+
+
+## v1.0.24.16 — Configuración inicial del generador de cédulas
+
+- La primera apertura del generador solicita configurar la plantilla de Cédula de Servicio.
+- Puede utilizarse la plantilla incluida o copiar una plantilla XLSX propia al espacio administrado de Atlas.
+- Los placeholders `{{CAMPO}}` se detectan automáticamente.
+- Como alternativa o complemento, cada campo puede mapearse directamente a una o varias celdas Excel.
+- La hoja de destino es seleccionable, por lo que una plantilla propia no necesita usar el nombre de hoja predeterminado.
+- La configuración queda en `data/service_template_config.json` y la plantilla administrada en `data/service_templates/`.
+- No se modifica el esquema SQLite ni la compatibilidad con bases Atlas existentes.
 
 ## v1.0.24.13 — Exportación editable a Excel
 
@@ -117,7 +136,7 @@ run_windows.bat
 
 La fuente pública no incluye ninguna base operacional. En el primer arranque Atlas crea `data/atlas.db` con el esquema vigente.
 
-Desde **Administrar datos** puede previsualizarse o reemplazarse la base activa usando las mismas bases SQLite compatibles aceptadas por v1.0.24.15. Si se coloca una base Atlas compatible con cualquier nombre `.db`, `.sqlite` o `.sqlite3` dentro de `data/`, Atlas puede recuperarla automáticamente cuando la base activa está vacía.
+Desde **Administrar datos** puede previsualizarse o reemplazarse la base activa usando las mismas bases SQLite compatibles aceptadas por v1.0.24.16. Si se coloca una base Atlas compatible con cualquier nombre `.db`, `.sqlite` o `.sqlite3` dentro de `data/`, Atlas puede recuperarla automáticamente cuando la base activa está vacía.
 
 
 ## Corrección v0.9

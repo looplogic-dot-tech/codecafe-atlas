@@ -1,0 +1,36 @@
+CodeCafe Atlas v1.0.24.24 — regression/build validation report
+
+Scope
+-----
+This release is intentionally limited to build reproducibility, dependency caching, repeated-build hygiene, and the Windows synchronized-path startup/build issue observed while validating v1.0.24.23.
+
+Functional baseline
+-------------------
+v1.0.24.23 remains the functional baseline. Operational application modules and database schema were not redesigned in v1.0.24.24.
+
+Changes introduced
+------------------
+- Version metadata advanced to 1.0.24.24.
+- Persistent package cache: packages/<platform>-<architecture>/py<major><minor>/.
+- Cache-first/offline dependency bootstrap via bootstrap_dependencies.py.
+- Automatic recreation of incompatible/damaged .venv.
+- Requirements are installed before validators.
+- build/dist/release remain disposable; packages is persistent.
+- Windows build/staging and startup smoke-test run under LOCALAPPDATA before the distro is accepted.
+- Windows portable ZIP generated under release/.
+- Linux/macOS build/run entrypoints use the same dependency bootstrap strategy.
+- Cumulative build-system regression guards added to validate_full_functionality.py.
+
+Validation performed in the packaging environment
+-------------------------------------------------
+PASS: Python syntax/compileall for the complete source tree.
+PASS: validate_public_identity.py — zero forbidden-name occurrences.
+PASS: validate_full_functionality.py — cumulative functional recovery guards.
+PASS: new v1.0.24.24 build reproducibility guards.
+PASS: source-diff audit confirms operational application source is unchanged except codecafe_atlas/__init__.py version metadata; build/run/validation/docs files are the intentional change surface.
+
+Environment-specific validation still required on Windows
+---------------------------------------------------------
+validate_before_build.py imports the real GUI/application dependency stack (PySide6/openpyxl/etc.). The packaging container does not contain those platform dependencies and has no package-download network. Therefore the final Windows acceptance gate is deliberately performed by build_windows.bat on the target Windows machine after bootstrap_dependencies.py has prepared the controlled .venv.
+
+The Windows release must not be accepted unless all three validators pass and build_windows_release.py successfully launches the locally staged CodeCafe-Atlas.exe smoke test.

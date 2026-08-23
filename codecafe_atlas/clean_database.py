@@ -242,22 +242,35 @@ def _ensure_clean_sync_records(c: sqlite3.Connection) -> None:
 
 def ensure_clean_database(path: Path) -> None:
  path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
- if path.exists():
-  c=sqlite3.connect(path)
-  clean=_table_exists(c,'atlas_buildings') and int(c.execute('PRAGMA user_version').fetchone()[0])>=3
+ if not path.exists() or path.stat().st_size == 0:
+  c=sqlite3.connect(path); c.executescript(STORAGE_SCHEMA); c.executescript(VIEW_SCHEMA); c.executescript(TRIGGERS); _seed(c); c.commit(); c.close(); return
+
+ c=sqlite3.connect(path)
+ try:
+  tables={str(r[0]).lower() for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+  user_version=int(c.execute('PRAGMA user_version').fetchone()[0])
+  clean_required={'atlas_buildings','atlas_dependencies','atlas_equipment','atlas_counter_readings','atlas_service_orders'}
+  legacy_required={'buildings','locations','dependencies','equipment'}
+  clean=clean_required.issubset(tables) and user_version>=3
+  legacy=legacy_required.issubset(tables)
   if clean:
    _ensure_clean_sync_records(c)
-   c.close()
    return
+ finally:
   c.close()
-  backup=path.with_name(path.stem+'_legacy_backup_'+datetime.now().strftime('%Y%m%d_%H%M%S')+path.suffix)
-  shutil.copy2(path,backup)
-  tmp=path.with_suffix(path.suffix+'.cleaning')
-  if tmp.exists(): tmp.unlink()
-  _migrate_legacy(path,tmp)
-  tmp.replace(path)
- else:
-  c=sqlite3.connect(path); c.executescript(STORAGE_SCHEMA); c.executescript(VIEW_SCHEMA); c.executescript(TRIGGERS); _seed(c); c.commit(); c.close()
+
+ if not legacy:
+  raise RuntimeError(
+   'La base activa no coincide con un esquema Atlas compatible. '
+   'No se modificó el archivo. Usa Administrar datos para previsualizar e importar una base compatible.'
+  )
+
+ backup=path.with_name(path.stem+'_legacy_backup_'+datetime.now().strftime('%Y%m%d_%H%M%S')+path.suffix)
+ shutil.copy2(path,backup)
+ tmp=path.with_suffix(path.suffix+'.cleaning')
+ if tmp.exists(): tmp.unlink()
+ _migrate_legacy(path,tmp)
+ tmp.replace(path)
 
 def _seed(c):
  for k,v in {'application_family':'CodeCafe Atlas','application_id':'io.codecafe.atlas','origin_id':'CCA-JSS-2026','database_format':'codecafe-atlas-clean','schema_version':CLEAN_SCHEMA_VERSION,'workspace_name':'codecafe-atlas','organization_name':'','workspace_description':''}.items():
