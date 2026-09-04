@@ -1,0 +1,14 @@
+CodeCafe Atlas v1.0.24.43 — informe de regresión
+
+RESULTADO: APROBADO
+
+- Base operativa: integridad SQLite correcta.
+- Lecturas históricas conservadas: 200.
+- Equipos sin lectura incorporados solo para resolver dependencia: aprobado.
+- Correcciones de P verificadas con hoja y base operativas: 258.
+- P2 y P380 corregidas a O.C.C. de Tribunales Colegiados: aprobado.
+- P22 corregida a O.C.C Juzgados de Distrito: aprobado.
+- Equipos sin lectura no generan contadores ni ceros: aprobado.
+- Mapeo R,S,V,W y protección de P: aprobado.
+- Estado En Operación y demás regresiones acumulativas: aprobado.
+

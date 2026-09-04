@@ -1,0 +1,10 @@
+CodeCafe Atlas v1.0.24.32 — Regression Report
+
+Scope: bounded-memory and responsive processing for large PDF separator batches.
+
+PASS — High-resolution OCR images are explicitly closed after use.
+PASS — Results cross the worker/UI boundary in bounded batches.
+PASS — Blocking queued delivery prevents an unbounded thumbnail event queue.
+PASS — Table painting and metrics refresh occur once per batch.
+PASS — Table height calculation is O(1) per batch instead of O(n) per row.
+PASS — Existing OCR, classification, review, export, history and database guards remain active.

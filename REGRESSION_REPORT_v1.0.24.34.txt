@@ -1,0 +1,10 @@
+CodeCafe Atlas v1.0.24.34 — Regression Report
+
+PASS — Monthly counter destination accepts a selectable eight-column range.
+PASS — A single starting column expands to exactly eight consecutive columns.
+PASS — Invalid and non-eight-column ranges are rejected before analysis.
+PASS — Target dictionaries and authorization guards follow the configured range.
+PASS — Editing the range invalidates the previous analysis.
+PASS — Formula protection and exact serial matching remain active.
+PASS — Existing cumulative validators pass.
+PASS — No database schema was modified.

@@ -1,0 +1,27 @@
+CodeCafe Atlas v1.0.24.31 — Regression Report
+
+Scope
+-----
+Introduce a bilingual software-use agreement and per-OS-user acceptance record
+without changing, encrypting, deleting, or claiming ownership over licensee data.
+
+Protected rules
+---------------
+1. Agreement appears before MainWindow and Database construction.
+2. Spanish and English texts share one immutable agreement version.
+3. Acceptance stores the SHA-256 of both canonical texts.
+4. Each operating-system user accepts independently.
+5. A changed version or hash requires acceptance again.
+6. Acceptance writes atomically outside SQLite.
+7. Declining exits without opening the operational database.
+8. Licensee operational data remains licensee property and exportable.
+9. Termination never deletes, encrypts, appropriates, or alters licensee data.
+10. All v1.0.24.30 and earlier functionality remains protected.
+
+Validation
+----------
+- Python compilation and AST validation.
+- Bilingual clause and canonical-hash checks.
+- Static startup-order and Help-menu integration checks.
+- Full accumulated Atlas validators and identity scan.
+- Document render and page-by-page visual inspection performed separately.

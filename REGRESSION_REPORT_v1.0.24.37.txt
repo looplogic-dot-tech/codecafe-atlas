@@ -1,0 +1,17 @@
+CodeCafe Atlas v1.0.24.37 — Regression Report
+
+PASS  Python syntax compilation.
+PASS  200 historical counter readings consolidate to 195 unique serials.
+PASS  Latest reading per exact normalized serial remains selected.
+PASS  Missing exact serial creates one previewed master row.
+PASS  New row writes Serie, LOCALIDAD=Torreón, R,S,V,W and derived operational status.
+PASS  Status header dynamically detected as J in the Agosto worksheet.
+PASS  Positive effective counter changes Almacenada to En Operación.
+PASS  All-zero counters preserve Almacenada.
+PASS  One-character typo and adjacent transposition detection.
+PASS  Similar serial is blocked by default and never auto-corrected.
+PASS  Explicit authorization creates the warned row and records a discrepancy.
+PASS  ODS new-row write, reopen and value verification.
+PASS  XLSX new-row write, reopen and value verification.
+PASS  Existing formulas remain byte-for-byte equivalent by logical coordinate.
+PASS  Full-function recovery and accumulated regression guards.

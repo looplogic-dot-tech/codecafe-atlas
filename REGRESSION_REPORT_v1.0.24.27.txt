@@ -1,0 +1,21 @@
+CodeCafe Atlas v1.0.24.27 — Regression Report
+
+PASS  Python compileall
+PASS  Full-function recovery validator
+PASS  Pre-build validator
+PASS  Public identity scan: zero forbidden-name occurrences
+PASS  Service-order folder opener regression guard
+PASS  Service-template A53/H53 formatting guard
+PASS  24-hour HH:mm:ss format and legacy-time parsing guard
+PASS  Quick-template create/edit/delete source contract
+PASS  PDF safe-rename source contract
+PASS  Technical Library navigation and indexing contract
+PASS  Auxiliary-tools isolated-launcher contract
+PASS  Database integrity and empty-database contract
+PASS  Counter shared-history guard
+
+Environment limitation:
+The current validation container does not include PySide6, so graphical widget
+instantiation was not executed. Python compilation, static UI contracts, database
+tests and every bundled non-graphical validator passed. The reproducible build
+bootstrap retains PySide6 in requirements and the local package-cache workflow.

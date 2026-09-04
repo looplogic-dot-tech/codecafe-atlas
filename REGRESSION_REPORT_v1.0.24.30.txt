@@ -1,0 +1,28 @@
+CodeCafe Atlas v1.0.24.30 — Regression Report
+
+Scope
+-----
+Complete an empty equipment hostname from an HP configuration report while
+saving counter readings. Never replace an existing value.
+
+Protected rules
+---------------
+1. Match equipment by normalized serial number.
+2. Fill only an empty hostname.
+3. Preserve every non-empty hostname already stored.
+4. Reject a hostname already assigned to another equipment record.
+5. Store a unique hostname during optional bulk equipment registration.
+6. Keep hostname editable in single, expanded-review and batch workflows.
+7. Preserve v1.0.24.29 bulk registration and v1.0.24.28 keyboard navigation.
+8. No database schema migration.
+
+Validation
+----------
+- Python source compilation.
+- JavaScript syntax and hostname parser cases.
+- Existing incomplete equipment completion.
+- New equipment hostname completion.
+- Existing hostname preservation.
+- Duplicate hostname conflict protection.
+- Invalid dependency rollback.
+- Full accumulated Atlas regression and public identity validators.

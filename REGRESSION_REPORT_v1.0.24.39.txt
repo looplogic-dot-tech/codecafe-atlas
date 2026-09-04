@@ -1,0 +1,25 @@
+CodeCafe Atlas v1.0.24.39 — informe de regresión
+
+Cambio evaluado:
+- Sustitución del PDF.js remoto por la distribución local 3.11.174.
+- Diagnóstico visible para PDFs rechazados.
+
+Protecciones esperadas:
+- El lector principal y el worker se resuelven mediante rutas locales.
+- El paquete contiene ambos archivos y su licencia.
+- La caché PDF tiene un máximo de dos documentos y destruye los recursos expulsados.
+- Registro de contadores conserva OCR, revisión, navegación, base e historial.
+
+Resultado:
+- Prueba directa de apertura y extracción con PDF.js local: APROBADA.
+- Sintaxis JavaScript del módulo: APROBADA.
+- Existencia e inclusión de lector, worker, fuentes y licencias: APROBADA.
+- Límite y liberación explícita de caché PDF: APROBADOS por guardas estáticas.
+- Validación previa a compilación: APROBADA.
+- Validación funcional acumulativa: APROBADA.
+- Identidad pública: APROBADA.
+- Homologador en tiempo de ejecución: APROBADO.
+- Columnas seleccionables del insertador: APROBADAS.
+
+Nota del entorno:
+- No hay un ejecutable Chromium/PySide6 disponible para automatizar la ventana gráfica completa. La apertura del motor PDF local se comprobó directamente con un PDF de prueba y las rutas del módulo quedaron protegidas por validadores.

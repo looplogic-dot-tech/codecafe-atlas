@@ -1,0 +1,25 @@
+CodeCafe Atlas v1.0.24.38 — informe de regresión
+
+Cambio evaluado:
+- Redistribución del Insertador inteligente en panel izquierdo y derecho.
+- Divisor horizontal ajustable y persistente.
+- Compactación visual de las opciones del panel izquierdo.
+
+Comportamiento que debe permanecer intacto:
+- Lectura desde la base de Atlas y/o reportes fuente.
+- Mapeo seleccionable de columnas y columna de serie.
+- Coincidencia exacta y advertencias por series parecidas.
+- Creación controlada de series faltantes.
+- Cambio a En Operación cuando existe un contador mayor que cero.
+- Protección de fórmulas y generación de copia, sin modificar la hoja original.
+
+Resultado:
+- Compilación sintáctica: APROBADA.
+- Prueba específica de columnas seleccionables: APROBADA.
+- Validación previa a compilación: APROBADA.
+- Identidad pública: APROBADA.
+- Homologador en tiempo de ejecución: APROBADO.
+- Validación funcional acumulativa: APROBADA.
+
+Nota del entorno:
+- La comprobación interactiva de la ventana requiere PySide6 en el equipo de compilación. La estructura del panel quedó protegida además por validación estática.

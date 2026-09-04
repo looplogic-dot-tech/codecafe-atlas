@@ -1,0 +1,14 @@
+CodeCafe Atlas v1.0.24.42 — informe de regresión
+
+RESULTADO: APROBADO
+
+- Compilación sintáctica de módulos: aprobada.
+- Mapeo R,S,V,W seleccionable: aprobado.
+- Normalización P,R,S,V,W -> R,S,V,W con ubicación activa: aprobada.
+- Escritura de dependencia en P: aprobada.
+- Escritura de contadores en R,S,V,W: aprobada.
+- Cambio de estado a En Operación: aprobado.
+- Conservación de pestaña protegida: aprobada.
+- Homologación integrada en Administrar datos: aprobada.
+- Validadores acumulativos de Atlas: aprobados.
+

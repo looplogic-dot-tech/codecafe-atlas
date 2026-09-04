@@ -1,0 +1,8 @@
+CodeCafe Atlas v1.0.24.33 — Regression Report
+
+PASS — Auxiliary Tools includes Dependency PDF Separator.
+PASS — Existing Data Bridge and Spreadsheet Comparator entries remain available.
+PASS — Atlas passes its active atlas.db path to the separator.
+PASS — Linux shell tools launch with Bash.
+PASS — Existing auxiliary-tool settings remain compatible.
+PASS — No database schema or operational module was modified.

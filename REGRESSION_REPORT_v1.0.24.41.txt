@@ -1,0 +1,23 @@
+CodeCafe Atlas v1.0.24.41 — informe de regresión
+
+Cambio evaluado:
+- Llenado y reemplazo opcional de Ubicación de Equipo desde la dependencia de Atlas.
+
+Pruebas específicas:
+- Detección de Ubicación de Equipo en P: APROBADA.
+- Lectura de dependencia mediante atlas_equipment y atlas_dependencies: APROBADA.
+- Modo completar conserva ubicaciones existentes: APROBADO.
+- Modo reemplazar sustituye ubicaciones diferentes: APROBADO.
+- Verificación de P, contadores y En Operación en la copia XLSX: APROBADA.
+- La base y la hoja maestra original permanecen sin cambios: APROBADO.
+
+Resultado acumulativo:
+- Compilación sintáctica: APROBADA.
+- Prueba específica de columnas, dependencias y modos: APROBADA.
+- Validación previa a compilación: APROBADA.
+- Identidad pública: APROBADA.
+- Homologador en tiempo de ejecución: APROBADO.
+- Validación funcional acumulativa: APROBADA.
+
+Nota del entorno:
+- La interacción visual final requiere el entorno de compilación con PySide6; controles, señales y reglas quedaron protegidos estáticamente.

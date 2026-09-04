@@ -1,0 +1,13 @@
+CodeCafe Atlas v1.0.24.36 — Regression Report
+
+PASS  Python syntax compilation.
+PASS  Existing selectable consecutive-column regression.
+PASS  Full-function recovery validation.
+PASS  Reproducible-build validation.
+PASS  CONTADORES TORREON 2026.ods detected: Agosto, Serie B, Localidad M, rows 2–390.
+PASS  Flexible targets detected: R,S,V,W.
+PASS  Direct Atlas database source opens SQLite in read-only mode.
+PASS  Latest reading per exact normalized serial selected by date and record id.
+PASS  Direct database integration matched Serie B and wrote R,S,V,W in a verified temporary copy.
+PASS  Existing Atlas-generated Excel report: 72 rows, 67 exact matches and 268 writable cells.
+PASS  No formulas, sheets or columns added or modified outside selected destinations.

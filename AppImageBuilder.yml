@@ -1,0 +1,21 @@
+version: 1
+AppDir:
+  path: ./AppDir
+  app_info:
+    id: io.codecafe.atlas
+    name: CodeCafe Atlas
+    icon: codecafe-atlas
+    version: 1.0.24.35
+    exec: usr/bin/CodeCafe-Atlas/CodeCafe-Atlas
+    exec_args: $@
+  files:
+    exclude: []
+  apt:
+    arch: amd64
+    sources: []
+    include: []
+  runtime:
+    env:
+      CODECAFE_ATLAS_HOME: '${XDG_DATA_HOME:-$HOME/.local/share}/CodeCafe-Atlas'
+AppImage:
+  arch: x86_64

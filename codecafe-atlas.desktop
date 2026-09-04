@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=CodeCafe Atlas
+Comment=Gestión e insertador flexible de contadores
+Exec=CodeCafe-Atlas
+Icon=codecafe-atlas
+Categories=Office;Utility;
+Terminal=false

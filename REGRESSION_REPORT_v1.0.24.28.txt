@@ -1,0 +1,24 @@
+CodeCafe Atlas v1.0.24.28 — Regression Report
+
+CORRECCIÓN ESPECÍFICA
+- Enter aplica la revisión actual y avanza: PASS
+- Flecha abajo enfoca el siguiente campo editable: PASS
+- Flecha arriba enfoca el campo editable anterior: PASS
+- Las flechas no alteran el valor de input numérico: PASS
+- Protección contra ejecución doble durante el avance: PASS
+
+VALIDACIONES ACUMULATIVAS
+- Sintaxis JavaScript del Registro de contadores: PASS
+- Compilación de fuentes Python: PASS
+- validate_full_functionality.py: PASS
+- validate_before_build.py: PASS
+- Historial compartido de contadores: PASS
+- Reproducibilidad de compilación: PASS
+- Hora y plantilla de orden de servicio: PASS
+- Mejoras operativas v1.0.24.27: PASS
+
+ALCANCE
+- Base de datos: sin cambios de esquema ni migración.
+- OCR y extracción de contadores: sin cambios.
+- Módulos ajenos al Registro de contadores: sin cambios funcionales.
+

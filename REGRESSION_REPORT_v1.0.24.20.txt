@@ -1,0 +1,5 @@
+CodeCafe Atlas v1.0.24.20 — Directorio / edificios
+
+Cambio: selector editable de edificios existentes + alta de edificio nuevo + protección de duplicados/similitud.
+Esquema SQLite: sin cambios.
+Compatibilidad de base: conservada.

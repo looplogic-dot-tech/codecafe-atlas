@@ -1,0 +1,31 @@
+CodeCafe Atlas v1.0.24.29 — Regression Report
+
+ALTA MASIVA DESDE CONTADORES
+- Detección de series inexistentes: PASS
+- Normalización de serie y eliminación de duplicados dentro del lote: PASS
+- Creación de varios equipos con una dependencia común: PASS
+- Conservación de serie y modelo OCR: PASS
+- Inferencia restringida de marca explícita: PASS
+- Vinculación de lecturas nuevas: PASS
+- Vinculación de lecturas históricas huérfanas: PASS
+- Cero lecturas huérfanas después del alta validada: PASS
+- Operación transaccional en base temporal: PASS
+
+INTERFAZ Y FLUJO
+- Confirmación única Registrar / Solo lecturas / Cancelar: PASS
+- Dependencia común enviada desde el módulo HTML: PASS
+- Selección única de dependencia cuando falta: PASS
+- Cancelación antes de modificar historial y estado del lote: PASS
+- Sin avisos durante sincronización automática de historial local: PASS
+- Actualización de Directorio, Inventario y Órdenes: PASS
+
+VALIDACIONES ACUMULATIVAS
+- Sintaxis JavaScript: PASS
+- Compilación Python: PASS
+- Historial canónico compartido de contadores: PASS
+- Navegación de teclado v1.0.24.28: PASS
+- Mejoras operativas v1.0.24.27: PASS
+- Hora y plantilla de órdenes: PASS
+- Reproducibilidad de compilación: PASS
+- Esquema de base de datos: SIN CAMBIOS
+

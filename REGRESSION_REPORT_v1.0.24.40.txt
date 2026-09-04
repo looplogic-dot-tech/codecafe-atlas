@@ -1,0 +1,23 @@
+CodeCafe Atlas v1.0.24.40 — informe de regresión
+
+Cambio evaluado:
+- Edición controlada de series discrepantes en la vista previa.
+- Reanálisis completo después de cada corrección.
+
+Protecciones esperadas:
+- Solo se editan celdas de serie autorizadas por su estado de discrepancia o por una corrección previa.
+- La fuente y la base de datos permanecen intactas.
+- La corrección no habilita coincidencias aproximadas.
+- Todas las reglas de escritura, nuevas filas, fórmulas y En Operación permanecen activas.
+
+Resultado:
+- Prueba de sustitución sin mutar el reporte original: APROBADA.
+- Compilación sintáctica: APROBADA.
+- Validación específica del insertador: APROBADA.
+- Validación previa a compilación: APROBADA.
+- Identidad pública: APROBADA.
+- Homologador en tiempo de ejecución: APROBADO.
+- Validación funcional acumulativa: APROBADA.
+
+Nota del entorno:
+- La interacción visual final requiere el entorno de compilación con PySide6; los controles, señales y guardas quedaron comprobados estáticamente.
