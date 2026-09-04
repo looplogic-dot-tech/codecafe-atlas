@@ -1,0 +1,15 @@
+CodeCafe Atlas v1.0.24.44 — informe de regresión
+
+RESULTADO: APROBADO
+
+- Hoja operativa detectada: Serie B, IP F, Estado J, Piso O, Ubicación P y Fecha Q.
+- Fuente Atlas verificada con 264 series combinadas de histórico y directorio.
+- Fechas faltantes detectadas con datos reales: 193.
+- Pisos faltantes detectados con datos reales: 53.
+- IP faltantes en la hoja detectadas con datos reales: 4.
+- Copia real generada y reabierta: 1,289 escrituras verificadas.
+- Formato XLSX y fórmulas conservados: aprobado.
+- Sincronización inversa de IP probada sobre copias: solo Atlas vacío, IP válida y serie exacta.
+- Respaldo previo e integridad SQLite posterior: aprobado.
+- IP existente en Atlas no se reemplaza: aprobado.
+- Validadores acumulativos y compilación Python: aprobado.

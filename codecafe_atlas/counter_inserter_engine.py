@@ -25,6 +25,7 @@ import argparse
 import copy
 import csv
 import io
+import ipaddress
 import json
 import os
 import posixpath
@@ -38,11 +39,12 @@ import zipfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from datetime import datetime
 from typing import Any, Iterable, Iterator, Optional
 from xml.etree import ElementTree as ET
 
 APP_NAME = "CodeCafe Atlas — Insertador inteligente de contadores"
-APP_VERSION = "1.0.24.43"
+APP_VERSION = "1.0.24.44"
 
 MASTER_SHEET_CANDIDATES = (
     "1__Consumo_de_Impresión_Mono",
@@ -494,6 +496,7 @@ class TableData:
     rows: list[list[Any]]
     source_record_count: int = 0
     source_unique_count: int = 0
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -514,6 +517,9 @@ class MasterLayout:
     validation_mode: str
     status_col: int = 0
     equipment_location_col: int = 0
+    counter_date_col: int = 0
+    floor_col: int = 0
+    ip_col: int = 0
 
 
 @dataclass
@@ -528,6 +534,12 @@ class MasterRecord:
     status_has_formula: bool = False
     current_location: Any = ""
     location_has_formula: bool = False
+    current_counter_date: Any = ""
+    counter_date_has_formula: bool = False
+    current_floor: Any = ""
+    floor_has_formula: bool = False
+    current_ip: Any = ""
+    ip_has_formula: bool = False
 
 
 @dataclass
@@ -561,6 +573,18 @@ class MatchDecision:
     location_action: str = "conservar"  # escribir | sobrescribir | igual | conservar | formula | sin_dependencia | conflicto_fuentes
     location_existing: Any = ""
     location_value: str = ""
+    counter_date_action: str = "conservar"
+    counter_date_existing: Any = ""
+    counter_date_value: str = ""
+    floor_action: str = "conservar"
+    floor_existing: Any = ""
+    floor_value: str = ""
+    ip_action: str = "conservar"
+    ip_existing: Any = ""
+    ip_value: str = ""
+    atlas_ip_action: str = "conservar"
+    atlas_ip_existing: Any = ""
+    atlas_ip_value: str = ""
 
     @property
     def counter_writable_count(self) -> int:
@@ -568,7 +592,8 @@ class MatchDecision:
 
     @property
     def writable_count(self) -> int:
-        return self.counter_writable_count + int(self.location_action in {"escribir", "sobrescribir"})
+        auxiliary = (self.location_action, self.counter_date_action, self.floor_action, self.ip_action)
+        return self.counter_writable_count + sum(action in {"escribir", "sobrescribir"} for action in auxiliary)
 
     @property
     def conflict_count(self) -> int:
@@ -592,6 +617,9 @@ class AnalysisResult:
     source_record_count: int = 0
     source_unique_count: int = 0
     location_mode: str = "off"
+    auxiliary_mode: str = "off"
+    import_missing_ips: bool = False
+    atlas_database_path: Optional[Path] = None
 
     def counts(self) -> dict[str, int]:
         counters = Counter(item.status for item in self.decisions)
@@ -621,6 +649,11 @@ class AnalysisResult:
         counters["missing_dependencies"] = sum(
             1 for d in self.decisions if d.location_action == "sin_dependencia"
         )
+        counters["date_updates"] = sum(1 for d in self.decisions if d.counter_date_action == "escribir")
+        counters["floor_updates"] = sum(1 for d in self.decisions if d.floor_action == "escribir")
+        counters["ip_updates"] = sum(1 for d in self.decisions if d.ip_action == "escribir")
+        counters["atlas_ip_imports"] = sum(1 for d in self.decisions if d.atlas_ip_action == "importar")
+        counters["ip_conflicts"] = sum(1 for d in self.decisions if d.ip_action == "conflicto")
         return dict(counters)
 
     def discrepancy_rows(self) -> list[dict[str, Any]]:
@@ -681,6 +714,18 @@ class AnalysisResult:
                     "accion": decision.location_action.upper(),
                     "detalle": decision.details,
                 })
+            if decision.ip_action == "conflicto":
+                ip_col = self.master_layout.ip_col
+                rows.append({
+                    **base,
+                    "tipo": "IP_DIFERENTE_ENTRE_ATLAS_Y_HOJA",
+                    "campo": "Dirección IP",
+                    "celda": f"{col_letter(ip_col)}{decision.master_row}" if ip_col and decision.master_row else "",
+                    "valor_reporte": decision.ip_value,
+                    "valor_maestro": str(decision.ip_existing or ""),
+                    "accion": "REVISAR_MANUALMENTE",
+                    "detalle": "Atlas conserva ambos valores sin reemplazarlos automáticamente.",
+                })
         return rows
 
     def location_updates(self) -> dict[int, str]:
@@ -690,6 +735,26 @@ class AnalysisResult:
             if decision.master_row is not None
             and decision.location_action in {"escribir", "sobrescribir"}
             and decision.location_value
+        }
+
+    def auxiliary_updates(self) -> dict[int, dict[str, str]]:
+        result: dict[int, dict[str, str]] = defaultdict(dict)
+        for decision in self.decisions:
+            if decision.master_row is None:
+                continue
+            if decision.counter_date_action == "escribir":
+                result[decision.master_row]["counter_date"] = decision.counter_date_value
+            if decision.floor_action == "escribir":
+                result[decision.master_row]["floor"] = decision.floor_value
+            if decision.ip_action == "escribir":
+                result[decision.master_row]["ip"] = decision.ip_value
+        return dict(result)
+
+    def atlas_ip_updates(self) -> dict[str, str]:
+        return {
+            decision.serial_key: decision.atlas_ip_value
+            for decision in self.decisions
+            if decision.atlas_ip_action == "importar" and decision.atlas_ip_value
         }
 
     def updates(self) -> dict[int, dict[str, Any]]:
@@ -1689,25 +1754,28 @@ def read_atlas_counter_database(path: Path) -> TableData:
             else:
                 raise AtlasError("La base seleccionada no contiene el histórico de contadores de Atlas.")
 
-            dependency_by_equipment: dict[int, str] = {}
-            dependency_by_serial: dict[str, str] = {}
+            equipment_details_by_id: dict[int, dict[str, str]] = {}
+            equipment_details_by_serial: dict[str, dict[str, str]] = {}
             equipment_rows: list[sqlite3.Row] = []
             if {"atlas_equipment", "atlas_dependencies"}.issubset(tables):
                 equipment_rows = connection.execute(
                     """
-                    SELECT e.id, e.serial_number, d.name AS dependency_name
+                    SELECT e.id, e.serial_number, e.ip_address,
+                           d.name AS dependency_name, d.floor AS dependency_floor
                     FROM atlas_equipment e
                     JOIN atlas_dependencies d ON d.id = e.dependency_id
                     """
                 ).fetchall()
                 for equipment in equipment_rows:
-                    dependency = str(equipment["dependency_name"] or "").strip()
-                    if not dependency:
-                        continue
-                    dependency_by_equipment[int(equipment["id"])] = dependency
+                    details = {
+                        "dependency": str(equipment["dependency_name"] or "").strip(),
+                        "floor": str(equipment["dependency_floor"] or "").strip(),
+                        "ip": str(equipment["ip_address"] or "").strip(),
+                    }
+                    equipment_details_by_id[int(equipment["id"])] = details
                     serial_key = normalize_serial(equipment["serial_number"])
                     if serial_key:
-                        dependency_by_serial[serial_key] = dependency
+                        equipment_details_by_serial[serial_key] = details
         finally:
             connection.close()
     except sqlite3.Error as exc:
@@ -1724,19 +1792,21 @@ def read_atlas_counter_database(path: Path) -> TableData:
     headers = [
         "Número de serie", "Total de impresiones",
         "Total de impresiones equivalentes", "Hojas ambas caras",
-        "Eventos de atasco", "Dependencia",
+        "Eventos de atasco", "Dependencia", "Fecha de toma del contador",
+        "Piso", "Dirección IP",
     ]
     data_rows = []
     for row in latest.values():
         equipment_id = row["equipment_id"]
-        dependency = ""
+        details: dict[str, str] = {}
         if equipment_id is not None:
-            dependency = dependency_by_equipment.get(int(equipment_id), "")
-        if not dependency:
-            dependency = dependency_by_serial.get(normalize_serial(row["serial_number"]), "")
+            details = equipment_details_by_id.get(int(equipment_id), {})
+        if not details:
+            details = equipment_details_by_serial.get(normalize_serial(row["serial_number"]), {})
         data_rows.append([
             row["serial_number"], row["total_prints"], row["letter_prints"],
-            row["duplex_sheets"], row["jam_events"], dependency,
+            row["duplex_sheets"], row["jam_events"], details.get("dependency", ""),
+            str(row["reading_date"] or "").strip(), details.get("floor", ""), details.get("ip", ""),
         ])
     # La dependencia pertenece al equipo, no al registro histórico. Incluir los
     # equipos que todavía no tienen contador permite completar P sin fabricar
@@ -1749,12 +1819,15 @@ def read_atlas_counter_database(path: Path) -> TableData:
             continue
         data_rows.append([
             serial, None, None, None, None,
-            str(equipment["dependency_name"] or "").strip(),
+            str(equipment["dependency_name"] or "").strip(), "",
+            str(equipment["dependency_floor"] or "").strip(),
+            str(equipment["ip_address"] or "").strip(),
         ])
     return TableData(
         path, "Histórico de contadores de Atlas", 1, headers, data_rows,
         source_record_count=len(rows),
         source_unique_count=len({normalize_serial(row[0]) for row in data_rows if normalize_serial(row[0])}),
+        metadata={"atlas_database_path": str(path.resolve())},
     )
 
 
@@ -1977,6 +2050,29 @@ def equipment_location_header_score(header: Any) -> int:
     return 0
 
 
+def counter_date_header_score(header: Any) -> int:
+    h = normalize_text(header)
+    if h in {"fecha de toma del contador", "fecha del contador", "fecha de lectura"}:
+        return 150
+    if "fecha" in h and ("contador" in h or "lectura" in h):
+        return 120
+    return 0
+
+
+def floor_header_score(header: Any) -> int:
+    h = normalize_text(header)
+    return 150 if h == "piso" else 0
+
+
+def ip_header_score(header: Any) -> int:
+    h = normalize_text(header)
+    if h in {"direccion ip", "ip", "ip del equipo", "direccion ip del equipo"}:
+        return 150
+    if "direccion" in h and "ip" in h:
+        return 120
+    return 0
+
+
 def dependency_header_score(header: Any) -> int:
     h = normalize_text(header)
     if h in {"dependencia", "dependency", "dependencia del equipo"}:
@@ -1995,6 +2091,11 @@ def source_dependency_column(headers: list[str]) -> Optional[int]:
     if not candidates:
         return None
     return max(candidates, key=lambda item: (item[0], -item[1]))[1]
+
+
+def source_auxiliary_column(headers: list[str], scorer) -> Optional[int]:
+    candidates = [(scorer(header), index) for index, header in enumerate(headers) if scorer(header)]
+    return max(candidates, key=lambda item: (item[0], -item[1]))[1] if candidates else None
 
 
 def _master_header_preview(document: ODSDocument | XLSXDocument, sheet: ET.Element, rows: int = 4) -> str:
@@ -2050,13 +2151,16 @@ def detect_master_layout(
     explicit_serial_col = None
     if normalize_text(serial_spec) not in {"", "auto", "automatico"}:
         explicit_serial_col = column_number(serial_spec)
-    candidates: list[tuple[int, int, int, int, int, int]] = []
+    candidates: list[tuple[int, ...]] = []
     for row_number in range(1, MASTER_HEADER_SCAN_ROWS + 1):
         row = document.get_row(sheet, row_number)
         serial_candidates: list[tuple[int, int]] = []
         locality_candidates: list[tuple[int, int]] = []
         status_candidates: list[tuple[int, int]] = []
         equipment_location_candidates: list[tuple[int, int]] = []
+        counter_date_candidates: list[tuple[int, int]] = []
+        floor_candidates: list[tuple[int, int]] = []
+        ip_candidates: list[tuple[int, int]] = []
         for col in range(1, max(TARGET_LAST_COL, explicit_serial_col or 0) + 1):
             value = document.cell_value(document.get_cell(row, col))
             if explicit_serial_col is None:
@@ -2072,6 +2176,14 @@ def detect_master_layout(
             location_score = equipment_location_header_score(value)
             if location_score:
                 equipment_location_candidates.append((location_score, col))
+            for scorer, target in (
+                (counter_date_header_score, counter_date_candidates),
+                (floor_header_score, floor_candidates),
+                (ip_header_score, ip_candidates),
+            ):
+                auxiliary_score = scorer(value)
+                if auxiliary_score:
+                    target.append((auxiliary_score, col))
         if explicit_serial_col is not None:
             serial_candidates.append((200, explicit_serial_col))
         if not serial_candidates or not locality_candidates:
@@ -2088,10 +2200,15 @@ def detect_master_layout(
             default=(0, 0),
             key=lambda item: (item[0], -item[1]),
         )[1]
-        candidates.append((score, -row_number, serial_col, locality_col, status_col, equipment_location_col))
+        auxiliary_cols = [
+            max(items, default=(0, 0), key=lambda item: (item[0], -item[1]))[1]
+            for items in (counter_date_candidates, floor_candidates, ip_candidates)
+        ]
+        candidates.append((score, -row_number, serial_col, locality_col, status_col, equipment_location_col, *auxiliary_cols))
 
     if candidates:
-        _, negative_row, serial_col, locality_col, status_col, equipment_location_col = max(candidates)
+        (_, negative_row, serial_col, locality_col, status_col, equipment_location_col,
+         counter_date_col, floor_col, ip_col) = max(candidates)
         header_row = -negative_row
     else:
         preview = _master_header_preview(document, sheet)
@@ -2165,6 +2282,7 @@ def detect_master_layout(
     return MasterLayout(
         header_row, serial_col, locality_col, first_row, last_row,
         validation_mode, status_col, equipment_location_col,
+        counter_date_col, floor_col, ip_col,
     )
 
 
@@ -2182,6 +2300,9 @@ def validate_master_layout(
         or layout.last_row != expected.last_row
         or layout.status_col != expected.status_col
         or layout.equipment_location_col != expected.equipment_location_col
+        or layout.counter_date_col != expected.counter_date_col
+        or layout.floor_col != expected.floor_col
+        or layout.ip_col != expected.ip_col
     ):
         raise AtlasError(
             "La disposición de la hoja maestra cambió desde el análisis. "
@@ -2228,6 +2349,16 @@ def load_master_records(
         else:
             current_location = ""
             location_has_formula = False
+        auxiliary_values: list[tuple[Any, bool]] = []
+        for auxiliary_col in (layout.counter_date_col, layout.floor_col, layout.ip_col):
+            if auxiliary_col:
+                auxiliary_cell = document.get_cell(row, auxiliary_col)
+                auxiliary_values.append((
+                    document.cell_value(auxiliary_cell),
+                    bool(document.cell_formula(auxiliary_cell)),
+                ))
+            else:
+                auxiliary_values.append(("", False))
         records_by_serial[serial_key].append(
             MasterRecord(
                 row_number,
@@ -2240,6 +2371,9 @@ def load_master_records(
                 status_has_formula,
                 current_location,
                 location_has_formula,
+                auxiliary_values[0][0], auxiliary_values[0][1],
+                auxiliary_values[1][0], auxiliary_values[1][1],
+                auxiliary_values[2][0], auxiliary_values[2][1],
             )
         )
     duplicates = {serial for serial, records in records_by_serial.items() if len(records) > 1}
@@ -2283,6 +2417,44 @@ def _equipment_location_decision(
     return "conservar", source_location
 
 
+def normalize_counter_date(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    candidate = raw.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(candidate)
+        return parsed.strftime("%d/%m/%Y")
+    except ValueError:
+        return raw
+
+
+def normalize_ip(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        return ""
+
+
+def _fill_auxiliary_decision(existing: Any, has_formula: bool, source: Any, column: int) -> tuple[str, str]:
+    value = str(source or "").strip()
+    if not column:
+        return "columna_no_detectada", value
+    if not value:
+        return "sin_dato", ""
+    if has_formula:
+        return "formula", value
+    current = str(existing or "").strip()
+    if not current:
+        return "escribir", value
+    if normalize_text(current) == normalize_text(value):
+        return "igual", value
+    return "conservar", value
+
+
 def _operation_status_decision(
     record: MasterRecord,
     fields: list[FieldDecision],
@@ -2314,6 +2486,8 @@ def analyze_files(
     allow_similar_missing_rows: bool = False,
     serial_overrides: Optional[dict[str, str]] = None,
     location_mode: str = "off",
+    auxiliary_mode: str = "off",
+    import_missing_ips: bool = False,
 ) -> AnalysisResult:
     master_path = Path(master_path)
     report_path = Path(report_path)
@@ -2322,6 +2496,7 @@ def analyze_files(
     master_sheet_name = document.sheet_name(sheet)
     master_layout = validate_master_layout(document, sheet, serial_spec=master_serial_spec)
     normalized_location_mode = normalize_text(location_mode)
+    normalized_auxiliary_mode = normalize_text(auxiliary_mode)
     if normalized_location_mode not in {"", "off", "fill", "replace", "completar", "reemplazar"}:
         raise AtlasError("El modo de actualización de ubicación no es válido.")
     if normalized_location_mode not in {"", "off"} and not master_layout.equipment_location_col:
@@ -2329,17 +2504,29 @@ def analyze_files(
             "Se solicitó actualizar la ubicación, pero no se encontró el encabezado "
             "‘Ubicación de Equipo’ en la hoja maestra."
         )
+    if normalized_auxiliary_mode not in {"", "off", "fill", "completar"}:
+        raise AtlasError("El modo de actualización de fecha, piso e IP no es válido.")
+    if normalized_auxiliary_mode not in {"", "off"}:
+        missing = [
+            label for label, col in (
+                ("Fecha de toma del contador", master_layout.counter_date_col),
+                ("Piso", master_layout.floor_col),
+                ("Dirección IP", master_layout.ip_col),
+            ) if not col
+        ]
+        if missing:
+            raise AtlasError("No se encontraron estos encabezados en la hoja maestra: " + ", ".join(missing))
     if normalize_text(target_spec) in {"", "auto", "automatico"}:
         configure_targets_from_master(
             document,
             sheet,
             master_layout.header_row,
-            excluded_cols=(
-                {master_layout.equipment_location_col}
-                if normalized_location_mode not in {"", "off"}
-                and master_layout.equipment_location_col
-                else set()
-            ),
+            excluded_cols={col for col in (
+                master_layout.equipment_location_col if normalized_location_mode not in {"", "off"} else 0,
+                master_layout.counter_date_col if normalized_auxiliary_mode not in {"", "off"} else 0,
+                master_layout.floor_col if normalized_auxiliary_mode not in {"", "off"} else 0,
+                master_layout.ip_col if normalized_auxiliary_mode not in {"", "off"} else 0,
+            ) if col},
         )
     else:
         if (
@@ -2359,6 +2546,10 @@ def analyze_files(
     mapping = configure_source_mapping(report.headers, source_spec)
     report = apply_serial_overrides(report, mapping, serial_overrides)
     dependency_col = source_dependency_column(report.headers)
+    source_date_col = source_auxiliary_column(report.headers, counter_date_header_score)
+    source_floor_col = source_auxiliary_column(report.headers, floor_header_score)
+    source_ip_col = source_auxiliary_column(report.headers, ip_header_score)
+    atlas_database_path = Path(report.metadata["atlas_database_path"]) if report.metadata.get("atlas_database_path") else None
 
     report_serial_counter: Counter[str] = Counter()
     report_rows_prepared = []
@@ -2444,6 +2635,10 @@ def analyze_files(
             if dependency_col is not None and dependency_col < len(row)
             else ""
         )
+        source_date = normalize_counter_date(row[source_date_col]) if source_date_col is not None and source_date_col < len(row) else ""
+        source_floor = str(row[source_floor_col] or "").strip() if source_floor_col is not None and source_floor_col < len(row) else ""
+        source_ip_raw = str(row[source_ip_col] or "").strip() if source_ip_col is not None and source_ip_col < len(row) else ""
+        source_ip = normalize_ip(source_ip_raw)
 
         field_decisions_by_key: dict[str, FieldDecision] = {}
         compatible_counter_exists = False
@@ -2576,6 +2771,33 @@ def analyze_files(
             master_layout.equipment_location_col,
             normalized_location_mode,
         )
+        if normalized_auxiliary_mode not in {"", "off"}:
+            date_action, date_value = _fill_auxiliary_decision(
+                record.current_counter_date, record.counter_date_has_formula,
+                source_date, master_layout.counter_date_col,
+            )
+            floor_action, floor_value = _fill_auxiliary_decision(
+                record.current_floor, record.floor_has_formula,
+                source_floor, master_layout.floor_col,
+            )
+            existing_ip = normalize_ip(record.current_ip)
+            if source_ip and existing_ip and source_ip != existing_ip:
+                ip_action, ip_value = "conflicto", source_ip
+            else:
+                ip_action, ip_value = _fill_auxiliary_decision(
+                    record.current_ip, record.ip_has_formula,
+                    source_ip, master_layout.ip_col,
+                )
+        else:
+            date_action = floor_action = ip_action = "conservar"
+            date_value = floor_value = ip_value = ""
+
+        atlas_ip_action = "conservar"
+        atlas_ip_value = ""
+        if import_missing_ips and atlas_database_path and not source_ip:
+            master_ip = normalize_ip(record.current_ip)
+            if master_ip:
+                atlas_ip_action, atlas_ip_value = "importar", master_ip
         if normalized_location_mode not in {"", "off"}:
             location_letter = col_letter(master_layout.equipment_location_col)
             if location_action == "escribir":
@@ -2615,6 +2837,18 @@ def analyze_files(
             location_action=location_action,
             location_existing=record.current_location,
             location_value=location_value,
+            counter_date_action=date_action,
+            counter_date_existing=record.current_counter_date,
+            counter_date_value=date_value,
+            floor_action=floor_action,
+            floor_existing=record.current_floor,
+            floor_value=floor_value,
+            ip_action=ip_action,
+            ip_existing=record.current_ip,
+            ip_value=ip_value,
+            atlas_ip_action=atlas_ip_action,
+            atlas_ip_existing=source_ip_raw,
+            atlas_ip_value=atlas_ip_value,
         ))
 
     return AnalysisResult(
@@ -2633,6 +2867,9 @@ def analyze_files(
         source_record_count=report.source_record_count,
         source_unique_count=report.source_unique_count,
         location_mode=normalized_location_mode or "off",
+        auxiliary_mode=normalized_auxiliary_mode or "off",
+        import_missing_ips=import_missing_ips,
+        atlas_database_path=atlas_database_path,
     )
 
 
@@ -2650,6 +2887,8 @@ def analyze_multiple_files(
     allow_similar_missing_rows: bool = False,
     serial_overrides: Optional[dict[str, str]] = None,
     location_mode: str = "off",
+    auxiliary_mode: str = "off",
+    import_missing_ips: bool = False,
 ) -> AnalysisResult:
     """Consolida varias fuentes usando exclusivamente la serie exacta normalizada."""
     paths = [Path(path) for path in report_paths]
@@ -2665,6 +2904,7 @@ def analyze_multiple_files(
             target_spec, source_spec, master_serial_spec, source_table,
             create_missing_rows, allow_similar_missing_rows, serial_overrides,
             location_mode,
+            auxiliary_mode, import_missing_ips,
         )
         for decision in result.decisions:
             decision.source_names = source_path.name
@@ -2676,7 +2916,7 @@ def analyze_multiple_files(
         analyze_files(
             master_path, path, overwrite_existing, master_sheet_name,
             target_spec, source_spec, master_serial_spec, table, False, False,
-            serial_overrides, location_mode,
+            serial_overrides, location_mode, auxiliary_mode, import_missing_ips,
         )
         for path, table in sources
     ]
@@ -2849,6 +3089,17 @@ def analyze_multiple_files(
             location_action=location_action,
             location_existing=record.current_location,
             location_value=location_value,
+            counter_date_action=next((d.counter_date_action for _, d in matched if d.counter_date_value), "conservar"),
+            counter_date_existing=record.current_counter_date,
+            counter_date_value=next((d.counter_date_value for _, d in matched if d.counter_date_value), ""),
+            floor_action=next((d.floor_action for _, d in matched if d.floor_value), "conservar"),
+            floor_existing=record.current_floor,
+            floor_value=next((d.floor_value for _, d in matched if d.floor_value), ""),
+            ip_action=next((d.ip_action for _, d in matched if d.ip_value), "conservar"),
+            ip_existing=record.current_ip,
+            ip_value=next((d.ip_value for _, d in matched if d.ip_value), ""),
+            atlas_ip_action=next((d.atlas_ip_action for _, d in matched if d.atlas_ip_action == "importar"), "conservar"),
+            atlas_ip_value=next((d.atlas_ip_value for _, d in matched if d.atlas_ip_value), ""),
         ))
 
     aggregate_fields: dict[str, int] = {}
@@ -2880,6 +3131,9 @@ def analyze_multiple_files(
         source_record_count=sum(analysis.source_record_count for analysis in analyses),
         source_unique_count=sum(analysis.source_unique_count for analysis in analyses),
         location_mode=normalize_text(location_mode) or "off",
+        auxiliary_mode=normalize_text(auxiliary_mode) or "off",
+        import_missing_ips=import_missing_ips,
+        atlas_database_path=next((analysis.atlas_database_path for analysis in analyses if analysis.atlas_database_path), None),
     )
 
 
@@ -2916,7 +3170,8 @@ def apply_analysis(analysis: AnalysisResult, output_path: Path) -> int:
     counter_updates = analysis.updates()
     status_updates = analysis.status_updates()
     location_updates = analysis.location_updates()
-    rows_to_update = sorted(set(counter_updates) | set(status_updates) | set(location_updates))
+    auxiliary_updates = analysis.auxiliary_updates()
+    rows_to_update = sorted(set(counter_updates) | set(status_updates) | set(location_updates) | set(auxiliary_updates))
     new_decisions = {
         decision.master_row: decision for decision in analysis.decisions
         if decision.creates_master_row and decision.master_row is not None
@@ -3006,6 +3261,25 @@ def apply_analysis(analysis: AnalysisResult, output_path: Path) -> int:
             document.set_text_value(location_cell, location_updates[row_number])
             written += 1
 
+        for field_key, value in auxiliary_updates.get(row_number, {}).items():
+            auxiliary_columns = {
+                "counter_date": master_layout.counter_date_col,
+                "floor": master_layout.floor_col,
+                "ip": master_layout.ip_col,
+            }
+            auxiliary_col = auxiliary_columns[field_key]
+            protected_cols = {
+                master_layout.serial_col, master_layout.locality_col,
+                master_layout.status_col, master_layout.equipment_location_col, *TARGET_COLS,
+            }
+            if not auxiliary_col or auxiliary_col in protected_cols:
+                raise AtlasError(f"La columna auxiliar {field_key} no es válida; se canceló la operación.")
+            auxiliary_cell = document.get_cell(row, auxiliary_col, split=True)
+            if document.cell_formula(auxiliary_cell):
+                raise AtlasError(f"La celda {col_letter(auxiliary_col)}{row_number} contiene una fórmula; se canceló.")
+            document.set_text_value(auxiliary_cell, value)
+            written += 1
+
     if document.formula_snapshot() != formulas_before:
         raise AtlasError("La verificación detectó un cambio de fórmulas. No se guardó el archivo.")
 
@@ -3049,13 +3323,63 @@ def apply_analysis(analysis: AnalysisResult, output_path: Path) -> int:
                 raise AtlasError(
                     f"La verificación falló en {col_letter(location_col)}{row_number}; la copia fue eliminada."
                 )
+        for field_key, expected_value in auxiliary_updates.get(row_number, {}).items():
+            auxiliary_col = {
+                "counter_date": analysis.master_layout.counter_date_col,
+                "floor": analysis.master_layout.floor_col,
+                "ip": analysis.master_layout.ip_col,
+            }[field_key]
+            actual_value = str(check.cell_value(check.get_cell(row, auxiliary_col)) or "").strip()
+            if actual_value != str(expected_value).strip():
+                output_path.unlink(missing_ok=True)
+                raise AtlasError(f"La verificación falló en {col_letter(auxiliary_col)}{row_number}; la copia fue eliminada.")
 
     try:
         write_discrepancy_report(analysis, output_path)
+        _apply_missing_atlas_ips(analysis)
     except Exception:
         output_path.unlink(missing_ok=True)
         raise
     return written
+
+
+def _apply_missing_atlas_ips(analysis: AnalysisResult) -> int:
+    updates = analysis.atlas_ip_updates()
+    if not updates:
+        return 0
+    database = analysis.atlas_database_path
+    if database is None or not database.exists():
+        raise AtlasError("No se encontró la base de Atlas para importar las IP faltantes.")
+    backup = database.with_name(database.stem + "_ANTES_IP_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f") + database.suffix)
+    shutil.copy2(database, backup)
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        written = 0
+        for serial, ip_value in updates.items():
+            if not normalize_ip(ip_value):
+                raise AtlasError(f"La IP propuesta para {serial} no es válida.")
+            matches = connection.execute(
+                "SELECT id, ip_address FROM atlas_equipment WHERE upper(replace(replace(trim(serial_number), '-', ''), ' ', '')) = ?",
+                (serial,),
+            ).fetchall()
+            if len(matches) != 1:
+                raise AtlasError(f"No se pudo identificar de forma única la serie {serial} en Atlas.")
+            equipment_id, current_ip = matches[0]
+            if str(current_ip or "").strip():
+                continue
+            cursor = connection.execute(
+                "UPDATE atlas_equipment SET ip_address = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND trim(coalesce(ip_address, '')) = ''",
+                (ip_value, equipment_id),
+            )
+            written += cursor.rowcount
+        connection.commit()
+        return written
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 def analysis_as_dict(analysis: AnalysisResult) -> dict[str, Any]:
     return {
@@ -3071,6 +3395,9 @@ def analysis_as_dict(analysis: AnalysisResult) -> dict[str, Any]:
                 col_letter(analysis.master_layout.equipment_location_col)
                 if analysis.master_layout.equipment_location_col else ""
             ),
+            "counter_date_column": col_letter(analysis.master_layout.counter_date_col) if analysis.master_layout.counter_date_col else "",
+            "floor_column": col_letter(analysis.master_layout.floor_col) if analysis.master_layout.floor_col else "",
+            "ip_column": col_letter(analysis.master_layout.ip_col) if analysis.master_layout.ip_col else "",
             "target_range": f"{target_range_label()} · filas {analysis.master_layout.first_row}:{analysis.master_layout.last_row}",
             "validation": analysis.master_layout.validation_mode,
         },

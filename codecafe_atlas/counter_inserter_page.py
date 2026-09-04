@@ -144,7 +144,7 @@ class CounterInserterPage(QWidget):
         )
         self.database_source_check.setToolTip(
             "Incluye la lectura más reciente guardada para cada número de serie. "
-            "La base se abre únicamente para lectura."
+            "La base solo se modifica si se autoriza importar una IP faltante."
         )
         self.database_source_check.toggled.connect(self._database_source_changed)
         source_mode_row.addWidget(self.database_source_check)
@@ -180,6 +180,29 @@ class CounterInserterPage(QWidget):
         )
         self.replace_location_check.toggled.connect(self._location_option_changed)
         location_options.addWidget(self.replace_location_check)
+        self.sync_auxiliary_check = QCheckBox(
+            "Completar fecha del contador, piso e IP desde Atlas"
+        )
+        self.sync_auxiliary_check.setChecked(
+            self.database_source_check.isChecked()
+            and self._settings.value("counter_inserter/sync_auxiliary", True, type=bool)
+        )
+        self.sync_auxiliary_check.setEnabled(self.database_source_check.isChecked())
+        self.sync_auxiliary_check.setToolTip(
+            "Detecta los encabezados reales y completa únicamente campos vacíos; no reemplaza valores existentes."
+        )
+        self.sync_auxiliary_check.toggled.connect(self._auxiliary_option_changed)
+        location_options.addWidget(self.sync_auxiliary_check)
+        self.import_missing_ip_check = QCheckBox(
+            "Importar a Atlas las IP faltantes encontradas en la hoja maestra"
+        )
+        self.import_missing_ip_check.setChecked(False)
+        self.import_missing_ip_check.setEnabled(self.database_source_check.isChecked())
+        self.import_missing_ip_check.setToolTip(
+            "Solo llena IP vacías en Atlas. Nunca reemplaza una IP existente y crea un respaldo antes de escribir."
+        )
+        self.import_missing_ip_check.toggled.connect(self._auxiliary_option_changed)
+        location_options.addWidget(self.import_missing_ip_check)
         panel_layout.addLayout(location_options)
 
         report_row = QHBoxLayout()
@@ -332,6 +355,15 @@ class CounterInserterPage(QWidget):
         if not checked:
             self.sync_location_check.setChecked(False)
         self.replace_location_check.setEnabled(checked and self.sync_location_check.isChecked())
+        self.sync_auxiliary_check.setEnabled(checked)
+        self.import_missing_ip_check.setEnabled(checked)
+        if not checked:
+            self.sync_auxiliary_check.setChecked(False)
+            self.import_missing_ip_check.setChecked(False)
+        self._invalidate()
+
+    def _auxiliary_option_changed(self, _checked: bool = False) -> None:
+        self._settings.setValue("counter_inserter/sync_auxiliary", self.sync_auxiliary_check.isChecked())
         self._invalidate()
 
     def _location_option_changed(self, _checked: bool = False) -> None:
@@ -425,6 +457,8 @@ class CounterInserterPage(QWidget):
         self.replace_location_check.setEnabled(
             (not busy) and self.database_source_check.isChecked() and self.sync_location_check.isChecked()
         )
+        self.sync_auxiliary_check.setEnabled((not busy) and self.database_source_check.isChecked())
+        self.import_missing_ip_check.setEnabled((not busy) and self.database_source_check.isChecked())
         self.create_missing_check.setEnabled(not busy)
         self.allow_similar_check.setEnabled((not busy) and self.create_missing_check.isChecked())
         self.report_list.setEnabled(not busy)
@@ -492,6 +526,8 @@ class CounterInserterPage(QWidget):
             else "fill" if use_database and self.sync_location_check.isChecked()
             else "off"
         )
+        auxiliary_mode = "fill" if use_database and self.sync_auxiliary_check.isChecked() else "off"
+        import_missing_ips = use_database and self.import_missing_ip_check.isChecked()
         serial_overrides = dict(self._serial_overrides)
         self.analysis = None
         self.table.setRowCount(0)
@@ -515,6 +551,8 @@ class CounterInserterPage(QWidget):
                 allow_similar_missing_rows=allow_similar,
                 serial_overrides=serial_overrides,
                 location_mode=location_mode,
+                auxiliary_mode=auxiliary_mode,
+                import_missing_ips=import_missing_ips,
             ),
             self._analysis_completed,
             "El análisis no pudo completarse.",
@@ -598,6 +636,10 @@ class CounterInserterPage(QWidget):
             f"{counts.get('status_updates', 0)} estados a En Operación · "
             f"{counts.get('location_updates', 0)} ubicaciones · "
             f"{counts.get('location_replacements', 0)} reemplazos de ubicación · "
+            f"{counts.get('date_updates', 0)} fechas · "
+            f"{counts.get('floor_updates', 0)} pisos · "
+            f"{counts.get('ip_updates', 0)} IP en hoja · "
+            f"{counts.get('atlas_ip_imports', 0)} IP hacia Atlas · "
             f"{counts.get('zero_fill_cells', 0)} ceros · "
             f"{counts.get('conflict_cells', 0)} conflictos · "
             f"{counts.get('discrepancies', 0)} discrepancias"
@@ -611,6 +653,9 @@ class CounterInserterPage(QWidget):
             f"• Serie: columna {layout.serial_col}; localidad: columna {layout.locality_col}",
             f"• Estado operativo: {col_letter(layout.status_col) if layout.status_col else 'no detectado'}",
             f"• Ubicación de Equipo: {col_letter(layout.equipment_location_col) if layout.equipment_location_col else 'no detectada'}",
+            f"• Fecha del contador: {col_letter(layout.counter_date_col) if layout.counter_date_col else 'no detectada'}",
+            f"• Piso: {col_letter(layout.floor_col) if layout.floor_col else 'no detectado'}",
+            f"• Dirección IP: {col_letter(layout.ip_col) if layout.ip_col else 'no detectada'}",
             f"• Contadores: {target_range_label()}",
             "",
             "MAPEO DETECTADO (fuentes → hoja maestra):",

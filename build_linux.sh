@@ -32,4 +32,4 @@ if [[ $STATUS -ne 0 && $STATUS -ne 124 ]]; then
 fi
 rm -f "$LOG"
 echo "Compilación y prueba de arranque correctas."
-echo ".venv/bin/python make_update_package.py --dist dist/CodeCafe-Atlas --version 1.0.24.43 --platform linux --architecture x86_64"
+echo ".venv/bin/python make_update_package.py --dist dist/CodeCafe-Atlas --version 1.0.24.44 --platform linux --architecture x86_64"

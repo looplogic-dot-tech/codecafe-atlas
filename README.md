@@ -1,4 +1,11 @@
-# CodeCafe Atlas v1.0.24.43
+# CodeCafe Atlas v1.0.24.44
+
+## v1.0.24.44 — fecha, piso e IP en el insertador
+
+- Detecta por encabezado e inserta la fecha de la lectura, el piso y la dirección IP en campos vacíos de la hoja maestra.
+- Puede importar a Atlas una IP válida presente en la hoja cuando el registro del equipo no tiene IP.
+- Nunca reemplaza automáticamente una IP ya registrada en Atlas; las diferencias se documentan para revisión.
+- Crea un respaldo de la base antes de importar IP y conserva fórmulas, formato y campos no relacionados.
 
 ## v1.0.24.43 — dependencia canónica para todos los equipos
 

@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-VERSION = "1.0.24.43"
+VERSION = "1.0.24.44"
 PRODUCT = "CodeCafe-Atlas"
 UPDATER = "CodeCafe-Atlas-Updater"
 

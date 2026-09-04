@@ -731,7 +731,7 @@ class SyncEngine:
         output.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         data = {
-            "version": "1.0.24.43",
+            "version": "1.0.24.44",
             "fecha": datetime.now().isoformat(timespec="seconds"),
             "base_local": str(self.local_path),
             "base_externa": str(self.external_path),
