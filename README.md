@@ -1,4 +1,11 @@
-# CodeCafe Atlas v1.0.24.44
+# CodeCafe Atlas v1.0.24.45
+
+## v1.0.24.45 — inicio automático y revisión ampliada
+
+- `Nuevo / limpiar` en Órdenes de servicio regresa automáticamente al inicio de la cédula y coloca el cursor en el primer campo.
+- `Revisar documento y corregir valores` en Registro de contadores maximiza temporalmente Atlas y utiliza todo el espacio disponible.
+- Al cerrar la revisión, Atlas recupera el estado de ventana que tenía antes de abrirla.
+- Se conservan la edición, navegación con Enter y flechas, zoom, rotación y ajuste al ancho.
 
 ## v1.0.24.44 — fecha, piso e IP en el insertador
 

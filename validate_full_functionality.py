@@ -486,3 +486,34 @@ for _fragment in (
     if _fragment not in _clear_text:
         raise SystemExit(f"ERROR: Nuevo / limpiar no reinicia el formulario completo ({_fragment}).")
 print("SERVICE ORDER COMPLETE CLEAR-FORM VALIDATION: PASS")
+
+# v1.0.24.45: a new service order starts at the top and counter review uses
+# the largest available workspace without losing its approved navigation.
+for _fragment in (
+    "self.form_scroll = QScrollArea()",
+    "self._scroll_form_to_top()",
+    "vertical.setValue(vertical.minimum())",
+    "QTimer.singleShot(0, reset_scrollbars)",
+    "self.dgti_report.setFocus()",
+):
+    if _fragment not in _service_source:
+        raise SystemExit(f"ERROR Órdenes v1.0.24.45: falta {_fragment}.")
+_counter_page_source = (ROOT / "codecafe_atlas" / "counter_registry_page.py").read_text(encoding="utf-8")
+_counter_html_source = (ROOT / "modules" / "counter_registry" / "index.html").read_text(encoding="utf-8")
+for _fragment in (
+    "reviewLargeModeRequested = Signal(bool)",
+    "def setReviewLargeMode(self, active: bool)",
+    "window.showMaximized()",
+    "window.setWindowState(previous)",
+):
+    if _fragment not in _counter_page_source:
+        raise SystemExit(f"ERROR Revisión v1.0.24.45: falta {_fragment}.")
+for _fragment in (
+    "width: 100vw;", "height: 100vh;",
+    "bridgeCall('setReviewLargeMode', true)",
+    "bridgeCall('setReviewLargeMode', false)",
+    "handleCounterReviewKeyboard", "fitCounterReview",
+):
+    if _fragment not in _counter_html_source:
+        raise SystemExit(f"ERROR Visor v1.0.24.45: falta {_fragment}.")
+print("V1.0.24.45 SERVICE TOP / LARGE COUNTER REVIEW GUARD: PASS")

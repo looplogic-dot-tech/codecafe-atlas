@@ -135,8 +135,8 @@ class ServiceOrderPage(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         root.addWidget(splitter, 1)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        self.form_scroll = QScrollArea()
+        self.form_scroll.setWidgetResizable(True)
         form_host = QWidget()
         form_root = QVBoxLayout(form_host)
         form_root.setContentsMargins(5, 5, 14, 5)
@@ -357,8 +357,8 @@ class ServiceOrderPage(QWidget):
         form_root.addWidget(service_box)
         form_root.addLayout(actions)
         form_root.addStretch(1)
-        scroll.setWidget(form_host)
-        splitter.addWidget(scroll)
+        self.form_scroll.setWidget(form_host)
+        splitter.addWidget(self.form_scroll)
 
         # History
         history_host = QWidget()
@@ -1503,7 +1503,22 @@ class ServiceOrderPage(QWidget):
         )
         self.equipment_status.setText("Selecciona primero una dependencia")
         self.update_document_fields()
+        self._scroll_form_to_top()
         self.dgti_report.setFocus()
+
+    def _scroll_form_to_top(self):
+        """Place a cleared/new service order at its real starting position."""
+        def reset_scrollbars():
+            vertical = self.form_scroll.verticalScrollBar()
+            horizontal = self.form_scroll.horizontalScrollBar()
+            vertical.setValue(vertical.minimum())
+            horizontal.setValue(horizontal.minimum())
+
+        reset_scrollbars()
+        # Several widgets change size while clear_form finishes. Repeating this
+        # after Qt processes the layout prevents focus restoration from leaving
+        # the form halfway down.
+        QTimer.singleShot(0, reset_scrollbars)
 
     def delete_record(self):
         if self.current_id is None:

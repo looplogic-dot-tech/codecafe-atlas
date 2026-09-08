@@ -100,6 +100,7 @@ def _configure_tesseract_environment(executable: str) -> None:
 class CounterDatabaseBridge(QObject):
     ocrFinished = Signal(str, str)
     equipmentChanged = Signal(int)
+    reviewLargeModeRequested = Signal(bool)
 
     def __init__(self, database: Database):
         super().__init__()
@@ -157,6 +158,11 @@ class CounterDatabaseBridge(QObject):
     @Slot(result=str)
     def ocrCapabilities(self) -> str:
         return self._response(ok=True, **self._ocr_capabilities())
+
+    @Slot(bool, result=str)
+    def setReviewLargeMode(self, active: bool) -> str:
+        self.reviewLargeModeRequested.emit(bool(active))
+        return self._response(ok=True)
 
     @staticmethod
     def _decode_data_url(data_url: str) -> Image.Image:
@@ -603,6 +609,8 @@ class CounterRegistryPage(QWidget):
         )
 
         self.bridge = CounterDatabaseBridge(database)
+        self._review_previous_window_state = None
+        self.bridge.reviewLargeModeRequested.connect(self._set_review_large_mode)
         self.web_channel = QWebChannel(self.browser.page())
         self.web_channel.registerObject("counterDatabase", self.bridge)
         self.browser.page().setWebChannel(self.web_channel)
@@ -616,6 +624,19 @@ class CounterRegistryPage(QWidget):
         browse_button.clicked.connect(self.open_folder)
 
         self.load_module(force=True)
+
+    def _set_review_large_mode(self, active: bool) -> None:
+        """Temporarily maximize Atlas while the document review is open."""
+        window = self.window()
+        if active:
+            if self._review_previous_window_state is None:
+                self._review_previous_window_state = window.windowState()
+            window.showMaximized()
+            return
+        previous = self._review_previous_window_state
+        self._review_previous_window_state = None
+        if previous is not None:
+            window.setWindowState(previous)
 
     def load_module(self, force: bool = False):
         if self._module_loaded and not force:

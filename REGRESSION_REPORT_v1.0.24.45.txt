@@ -1,0 +1,13 @@
+CodeCafe Atlas v1.0.24.45 — informe de regresión
+
+RESULTADO: APROBADO
+
+- Nuevo / limpiar conserva el borrado completo aprobado: correcto.
+- Scroll vertical y horizontal regresan a su mínimo: correcto.
+- Segundo reposicionamiento posterior al recálculo de Qt: correcto.
+- Foco inicial en Reporte DGTI: correcto.
+- Revisión de contadores maximiza Atlas temporalmente: correcto.
+- Cierre de revisión restaura el estado anterior: correcto.
+- Modal de revisión ocupa 100vw × 100vh: correcto.
+- Navegación Enter y flechas, zoom, giro y ajuste al ancho conservados: correcto.
+- Compilación Python, identidad pública y validadores acumulativos: aprobado.

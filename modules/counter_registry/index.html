@@ -179,7 +179,7 @@
       overflow: auto;
       white-space: pre-wrap;
       word-break: break-word;
-      padding: 10px;
+      padding: 0;
       border-radius: 10px;
       background: #111820;
       color: #e8eef4;
@@ -303,15 +303,15 @@
     }
 
     .counter-review-window {
-      width: min(97vw, 1740px);
-      height: min(96vh, 1120px);
-      min-width: 880px;
-      min-height: 650px;
+      width: 100vw;
+      height: 100vh;
+      min-width: 0;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       overflow: hidden;
       border: 1px solid #9fb0bf;
-      border-radius: 16px;
+      border-radius: 0;
       background: white;
       box-shadow: 0 28px 80px rgba(0, 0, 0, .38);
     }
@@ -359,7 +359,7 @@
       min-height: 0;
       flex: 1;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(370px, 430px);
+      grid-template-columns: minmax(0, 1fr) clamp(370px, 29vw, 500px);
     }
 
     .counter-review-document {
@@ -3237,6 +3237,7 @@
       $('counterReviewLoading').hidden = false;
       $('counterReviewModal').hidden = false;
       document.body.classList.add('counter-review-open');
+      bridgeCall('setReviewLargeMode', true).catch(() => {});
 
       try {
         counterReview.source =
@@ -3421,6 +3422,7 @@
       $('counterReviewModal').hidden = true;
       $('counterReviewLoading').hidden = true;
       document.body.classList.remove('counter-review-open');
+      bridgeCall('setReviewLargeMode', false).catch(() => {});
     }
 
     function commitBatchSerialEdit(index, input) {
