@@ -15,10 +15,14 @@ from PySide6.QtCore import QObject, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -274,6 +278,45 @@ class CounterDatabaseBridge(QObject):
                     **result,
                 )
 
+            possible_typos = [
+                item for item in missing if item.get("similar_serials")
+            ]
+            if possible_typos:
+                lines = []
+                for item in possible_typos[:12]:
+                    candidates = ", ".join(
+                        candidate["serial_number"]
+                        for candidate in item["similar_serials"]
+                    )
+                    lines.append(f'• {item["serial_number"]} → posiblemente {candidates}')
+                if len(possible_typos) > 12:
+                    lines.append(f"• … y {len(possible_typos) - 12} advertencia(s) más")
+                warning = QMessageBox()
+                warning.setIcon(QMessageBox.Icon.Warning)
+                warning.setWindowTitle("Posibles series mal escritas")
+                warning.setText(
+                    "Atlas encontró series no registradas muy parecidas a equipos del Inventario."
+                )
+                warning.setInformativeText(
+                    "\n".join(lines)
+                    + "\n\nRevísalas antes de crear equipos nuevos. Atlas nunca las corregirá automáticamente."
+                )
+                review_button = warning.addButton(
+                    "Regresar y corregir", QMessageBox.ButtonRole.RejectRole
+                )
+                continue_button = warning.addButton(
+                    "Continuar sin corregir", QMessageBox.ButtonRole.DestructiveRole
+                )
+                warning.setDefaultButton(review_button)
+                warning.exec()
+                if warning.clickedButton() is not continue_button:
+                    return self._response(
+                        ok=True,
+                        cancelled=True,
+                        possible_serial_typos=len(possible_typos),
+                        missing_equipment=len(missing),
+                    )
+
             dependency_rows = self.database.dependency_choices()
             dependencies = {int(row["id"]): row for row in dependency_rows}
             requested_ids: set[int] = set()
@@ -405,6 +448,112 @@ class CounterDatabaseBridge(QObject):
         try:
             records = self.database.list_counter_records()
             return self._response(ok=True, records=records, count=len(records))
+        except Exception as error:
+            return self._response(ok=False, error=str(error))
+
+    @Slot(str, result=str)
+    def editRecord(self, record_uid: str) -> str:
+        """Open a native editor for one already-saved historical reading."""
+        try:
+            record = next(
+                (
+                    item for item in self.database.list_counter_records()
+                    if str(item.get("id") or "") == str(record_uid or "")
+                ),
+                None,
+            )
+            if record is None:
+                raise ValueError("La lectura seleccionada ya no existe.")
+
+            dialog = QDialog()
+            dialog.setWindowTitle("Corregir lectura histórica")
+            dialog.setMinimumWidth(560)
+            layout = QVBoxLayout(dialog)
+            notice = QLabel(
+                "Corrige únicamente los campos necesarios. Si la serie coincide exactamente "
+                "con Inventario, Atlas volverá a vincular esta lectura con ese equipo."
+            )
+            notice.setWordWrap(True)
+            layout.addWidget(notice)
+            form = QFormLayout()
+            definitions = (
+                ("date", "Fecha y hora"),
+                ("equipment", "Número de serie"),
+                ("model", "Modelo"),
+                ("file", "Archivo de origen"),
+                ("total", "Total"),
+                ("equivalent", "Carta / equivalente"),
+                ("duplex", "Dúplex"),
+                ("jams", "Atascos"),
+                ("misfeeds", "Mal alimentadas"),
+                ("economode", "Economode"),
+            )
+            fields: dict[str, QLineEdit] = {}
+            for key, label in definitions:
+                field = QLineEdit()
+                value = record.get(key)
+                field.setText("" if value is None else str(value))
+                fields[key] = field
+                form.addRow(label, field)
+            layout.addLayout(form)
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Save
+                | QDialogButtonBox.StandardButton.Cancel
+            )
+            buttons.button(QDialogButtonBox.StandardButton.Save).setText("Guardar corrección")
+            buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return self._response(ok=True, cancelled=True)
+
+            values = {key: field.text().strip() for key, field in fields.items()}
+            values["serial_number"] = values.pop("equipment")
+            values["format"] = record.get("format") or ""
+
+            suggestions = self.database.counter_serial_suggestions(values["serial_number"])
+            if suggestions:
+                candidate_text = "\n".join(
+                    f'• {item["serial_number"]}'
+                    + (f' — {item["model"]}' if item.get("model") else "")
+                    for item in suggestions
+                )
+                prompt = QMessageBox()
+                prompt.setIcon(QMessageBox.Icon.Warning)
+                prompt.setWindowTitle("Posible serie mal escrita")
+                prompt.setText(
+                    f'La serie “{values["serial_number"]}” no existe exactamente en Inventario.'
+                )
+                prompt.setInformativeText(
+                    "Atlas encontró estas series muy parecidas:\n\n"
+                    + candidate_text
+                    + "\n\nLa decisión siempre requiere tu confirmación."
+                )
+                use_candidate_button = None
+                if len(suggestions) == 1:
+                    use_candidate_button = prompt.addButton(
+                        f'Usar {suggestions[0]["serial_number"]}',
+                        QMessageBox.ButtonRole.AcceptRole,
+                    )
+                keep_button = prompt.addButton(
+                    "Guardar exactamente así", QMessageBox.ButtonRole.DestructiveRole
+                )
+                cancel_button = prompt.addButton(
+                    "Cancelar", QMessageBox.ButtonRole.RejectRole
+                )
+                prompt.setDefaultButton(
+                    use_candidate_button if use_candidate_button is not None else cancel_button
+                )
+                prompt.exec()
+                if use_candidate_button is not None and prompt.clickedButton() is use_candidate_button:
+                    values["serial_number"] = suggestions[0]["serial_number"]
+                elif prompt.clickedButton() is not keep_button:
+                    return self._response(ok=True, cancelled=True, possible_typo=True)
+
+            result = self.database.update_counter_record(record_uid, values)
+            self.equipmentChanged.emit(1)
+            return self._response(ok=True, cancelled=False, **result)
         except Exception as error:
             return self._response(ok=False, error=str(error))
 

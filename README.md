@@ -1,4 +1,12 @@
-# CodeCafe Atlas v1.0.24.45
+# CodeCafe Atlas v1.0.24.46
+
+## v1.0.24.46 — historial de contadores editable
+
+- Cada lectura guardada puede corregirse desde el Historial de contadores.
+- La edición permite corregir fecha, serie, modelo, archivo y valores de contador.
+- Al corregir una serie para que coincida exactamente con Inventario, Atlas vuelve a vincular la lectura al equipo real.
+- Registro de contadores advierte antes de crear una serie muy parecida a otra existente y nunca la corrige automáticamente.
+- Cada edición conserva internamente los valores anteriores y posteriores para mantener trazabilidad.
 
 ## v1.0.24.45 — inicio automático y revisión ampliada
 

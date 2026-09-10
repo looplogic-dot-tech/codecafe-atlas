@@ -1,0 +1,27 @@
+CodeCafe Atlas v1.0.24.46 — informe de regresión
+
+Resultado: APROBADO
+
+Cambio validado
+- El Historial de contadores muestra una acción Editar por lectura.
+- Se pueden corregir fecha, serie, modelo, archivo y contadores después de guardar.
+- Una serie corregida que coincide exactamente con Inventario vuelve a enlazarse mediante equipment_id.
+- Las series nuevas a una sola edición de distancia de una serie existente generan advertencia.
+- No existe corrección automática: conservar o cambiar la serie requiere decisión expresa del usuario.
+- Cada edición almacena valores anteriores y posteriores en atlas_counter_reading_edits.
+
+Caso real reproducido sobre una copia de la base
+- Histórico incorrecto: VNB00B01235, equipment_id NULL.
+- Inventario correcto: VNB0B01235, equipment_id 13.
+- Resultado posterior a la corrección: serial_snapshot VNB0B01235 y equipment_id 13.
+- El registro de auditoría fue creado sin alterar la base original aportada por el usuario.
+
+Validaciones acumulativas
+- validate_public_identity.py: PASS.
+- validate_full_functionality.py: PASS.
+- validate_before_build.py: PASS.
+- git diff --check: PASS.
+- Funciones protegidas anteriores: PASS.
+
+Pendiente externo
+- Data Recovery Tool debe adoptar la misma clasificación cuando esté disponible su código fuente.

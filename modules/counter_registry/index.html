@@ -1310,6 +1310,35 @@
       }
     }
 
+    async function editRecordInDatabase(recordId) {
+      if (!state.dbBridge) {
+        alert('La edición histórica requiere la base común de Atlas.');
+        return false;
+      }
+      try {
+        const response = await bridgeCall('editRecord', String(recordId || ''));
+        if (response.cancelled) return false;
+        const refreshed = await bridgeCall('loadRecords');
+        if (Array.isArray(refreshed.records)) {
+          state.history = refreshed.records;
+          persistHistory();
+          renderHistory();
+        }
+        const linkMessage = response.linked_to_inventory
+          ? ' La lectura quedó vinculada al equipo correcto del Inventario.'
+          : ' La serie continúa sin un equipo exacto en Inventario.';
+        setDatabaseStatus(
+          `Lectura corregida · ${state.history.length} registro(s)`,
+          response.linked_to_inventory ? 'ok' : 'warn'
+        );
+        alert(`Corrección guardada.${linkMessage}`);
+        return true;
+      } catch (error) {
+        alert(`No se pudo corregir la lectura: ${error.message || error}`);
+        return false;
+      }
+    }
+
     function emptyValues() {
       return { total: null, equivalent: null, duplex: null, jams: null, misfeeds: null, economode: null };
     }
@@ -3705,6 +3734,13 @@
           });
 
           const action = document.createElement('td');
+          const editButton = document.createElement('button');
+          editButton.type = 'button';
+          editButton.className = 'mini-btn secondary';
+          editButton.textContent = 'Editar';
+          editButton.addEventListener('click', async () => {
+            await editRecordInDatabase(record.id);
+          });
           const button = document.createElement('button');
           button.type = 'button';
           button.className = 'mini-btn danger';
@@ -3720,7 +3756,7 @@
               'ok'
             );
           });
-          action.appendChild(button);
+          action.append(editButton, document.createTextNode(' '), button);
           row.appendChild(action);
           body.appendChild(row);
           detailRows.push(row);

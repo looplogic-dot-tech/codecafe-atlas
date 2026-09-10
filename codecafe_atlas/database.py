@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import unicodedata
@@ -1920,6 +1921,77 @@ class Database:
                 return int(row["id"])
         return None
 
+    @classmethod
+    def _serial_edit_distance(cls, left: Any, right: Any, limit: int = 1) -> int:
+        """Bounded Damerau-Levenshtein distance used only for typo warnings."""
+        left_key = cls._normalize_equipment_identifier(left)
+        right_key = cls._normalize_equipment_identifier(right)
+        if abs(len(left_key) - len(right_key)) > limit:
+            return limit + 1
+        previous_previous: list[int] | None = None
+        previous = list(range(len(right_key) + 1))
+        for i, left_character in enumerate(left_key, start=1):
+            current = [i]
+            row_minimum = i
+            for j, right_character in enumerate(right_key, start=1):
+                value = min(
+                    current[j - 1] + 1,
+                    previous[j] + 1,
+                    previous[j - 1] + (left_character != right_character),
+                )
+                if (
+                    previous_previous is not None
+                    and i > 1
+                    and j > 1
+                    and left_character == right_key[j - 2]
+                    and left_key[i - 2] == right_character
+                ):
+                    value = min(value, previous_previous[j - 2] + 1)
+                current.append(value)
+                row_minimum = min(row_minimum, value)
+            if row_minimum > limit:
+                return limit + 1
+            previous_previous, previous = previous, current
+        return previous[-1]
+
+    def _similar_equipment_serials(
+        self,
+        connection: sqlite3.Connection,
+        serial_number: str,
+        *,
+        limit: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Return close inventory serials as warnings, never automatic matches."""
+        normalized = self._normalize_equipment_identifier(serial_number)
+        if len(normalized) < 6:
+            return []
+        candidates: list[dict[str, Any]] = []
+        rows = connection.execute(
+            "SELECT id, serial_number, model FROM atlas_equipment WHERE trim(serial_number)<>''"
+        ).fetchall()
+        for row in rows:
+            existing = self._normalize_equipment_identifier(row["serial_number"])
+            if not existing or existing == normalized:
+                continue
+            distance = self._serial_edit_distance(normalized, existing, limit=1)
+            if distance <= 1:
+                candidates.append({
+                    "equipment_id": int(row["id"]),
+                    "serial_number": str(row["serial_number"] or "").strip(),
+                    "model": str(row["model"] or "").strip(),
+                    "distance": distance,
+                })
+        return sorted(
+            candidates,
+            key=lambda item: (item["distance"], item["serial_number"].casefold()),
+        )[:limit]
+
+    def counter_serial_suggestions(self, serial_number: str) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            if self._equipment_id_for_serial(connection, serial_number) is not None:
+                return []
+            return self._similar_equipment_serials(connection, serial_number)
+
     def _equipment_for_hostname(
         self,
         connection: sqlite3.Connection,
@@ -1939,7 +2011,7 @@ class Database:
     def missing_counter_equipment(
         self,
         records: list[dict[str, Any]],
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         """Return each new counter serial once, without changing the database."""
         missing: dict[str, dict[str, str]] = {}
         with self.connect() as connection:
@@ -1957,6 +2029,9 @@ class Database:
                 missing[normalized] = {
                     "serial_number": serial_number,
                     "model": str(record.get("model") or "").strip(),
+                    "similar_serials": self._similar_equipment_serials(
+                        connection, serial_number
+                    ),
                 }
         return list(missing.values())
 
@@ -2275,6 +2350,104 @@ class Database:
             }
             for row in rows
         ]
+
+    def update_counter_record(
+        self,
+        record_uid: str,
+        values: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Correct one saved reading and relink it to an exact inventory serial."""
+        record_uid = str(record_uid or "").strip()
+        if not record_uid:
+            raise ValueError("La lectura no contiene un identificador válido.")
+        serial_number = str(values.get("serial_number") or values.get("equipment") or "").strip()
+        if not serial_number:
+            raise ValueError("El número de serie no puede quedar vacío.")
+
+        numeric_fields = {
+            "total_prints": values.get("total"),
+            "letter_prints": values.get("equivalent"),
+            "duplex_sheets": values.get("duplex"),
+            "jam_events": values.get("jams"),
+            "misfeed_events": values.get("misfeeds"),
+            "economode_prints": values.get("economode"),
+        }
+        converted = {
+            name: self._counter_number(value)
+            for name, value in numeric_fields.items()
+        }
+        invalid_numeric = [
+            name for name, original in numeric_fields.items()
+            if str(original or "").strip() and converted[name] is None
+        ]
+        if invalid_numeric:
+            raise ValueError("Uno o más contadores no contienen un número válido.")
+        with self.connect() as connection:
+            previous = connection.execute(
+                "SELECT * FROM counter_records WHERE record_uid=?",
+                (record_uid,),
+            ).fetchone()
+            if previous is None:
+                raise ValueError("La lectura seleccionada ya no existe.")
+            equipment_id = self._equipment_id_for_serial(connection, serial_number)
+            connection.execute(
+                """
+                UPDATE counter_records
+                SET equipment_id=?, reading_date=?, serial_number=?, model=?,
+                    source_file=?, total_prints=?, letter_prints=?, duplex_sheets=?,
+                    jam_events=?, misfeed_events=?, economode_prints=?, format_type=?
+                WHERE record_uid=?
+                """,
+                (
+                    equipment_id,
+                    str(values.get("date") or "").strip(),
+                    serial_number,
+                    str(values.get("model") or "").strip(),
+                    str(values.get("file") or "").strip(),
+                    converted["total_prints"],
+                    converted["letter_prints"],
+                    converted["duplex_sheets"],
+                    converted["jam_events"],
+                    converted["misfeed_events"],
+                    converted["economode_prints"],
+                    str(values.get("format") or previous["format_type"] or "").strip(),
+                    record_uid,
+                ),
+            )
+            current = connection.execute(
+                "SELECT * FROM counter_records WHERE record_uid=?",
+                (record_uid,),
+            ).fetchone()
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS atlas_counter_reading_edits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    record_uid TEXT NOT NULL,
+                    edited_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    previous_values_json TEXT NOT NULL,
+                    corrected_values_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO atlas_counter_reading_edits (
+                    record_uid, previous_values_json, corrected_values_json
+                ) VALUES (?, ?, ?)
+                """,
+                (
+                    record_uid,
+                    json.dumps(dict(previous), ensure_ascii=False, default=str),
+                    json.dumps(dict(current), ensure_ascii=False, default=str),
+                ),
+            )
+            return {
+                "record_uid": record_uid,
+                "previous_serial": str(previous["serial_number"] or "").strip(),
+                "serial_number": serial_number,
+                "equipment_id": equipment_id,
+                "linked_to_inventory": equipment_id is not None,
+            }
 
     def delete_counter_record(self, record_uid: str) -> bool:
         with self.connect() as connection:

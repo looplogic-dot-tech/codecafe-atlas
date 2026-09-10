@@ -517,3 +517,31 @@ for _fragment in (
     if _fragment not in _counter_html_source:
         raise SystemExit(f"ERROR Visor v1.0.24.45: falta {_fragment}.")
 print("V1.0.24.45 SERVICE TOP / LARGE COUNTER REVIEW GUARD: PASS")
+
+# v1.0.24.46: saved counter readings remain correctable and suspected serial
+# typos are warnings that require a user decision.
+for _fragment in (
+    "def _serial_edit_distance(",
+    "def counter_serial_suggestions(",
+    "def update_counter_record(",
+    "atlas_counter_reading_edits",
+    "linked_to_inventory",
+):
+    if _fragment not in _database_source:
+        raise SystemExit(f"ERROR Historial v1.0.24.46: falta {_fragment}.")
+for _fragment in (
+    "def editRecord(self, record_uid: str)",
+    "Posibles series mal escritas",
+    "Regresar y corregir",
+    "Guardar exactamente así",
+):
+    if _fragment not in _counter_page_source:
+        raise SystemExit(f"ERROR Advertencia v1.0.24.46: falta {_fragment}.")
+for _fragment in (
+    "editRecordInDatabase(recordId)",
+    "editButton.textContent = 'Editar'",
+    "bridgeCall('editRecord'",
+):
+    if _fragment not in _counter_html_source:
+        raise SystemExit(f"ERROR Interfaz historial v1.0.24.46: falta {_fragment}.")
+print("V1.0.24.46 EDITABLE COUNTER HISTORY / TYPO WARNING GUARD: PASS")

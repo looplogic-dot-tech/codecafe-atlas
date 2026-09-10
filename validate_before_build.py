@@ -991,5 +991,50 @@ try:
         raise SystemExit("ERROR Alta masiva: una operación inválida dejó datos parciales.")
 finally:
     _registration_connection.close()
+
+_typo_reading = {
+    "id": "counter-serial-typo-validation",
+    "equipment": "REGISTEERD-003",
+    "model": "HP Existing Validation",
+    "file": "REGISTEERD-003.pdf",
+    "date": "2026-08-28T09:40:00",
+    "total": 700,
+    "equivalent": 650,
+    "duplex": 300,
+    "jams": 1,
+    "misfeeds": 0,
+    "economode": 0,
+    "format": "hp_configuration",
+}
+_registration_db.save_counter_records([_typo_reading])
+_typo_suggestions = _registration_db.counter_serial_suggestions("REGISTEERD-003")
+if not _typo_suggestions or _typo_suggestions[0]["serial_number"] != "REGISTERED-003":
+    raise SystemExit(f"ERROR Historial: no advirtió la serie parecida {_typo_suggestions}.")
+_typo_reading["serial_number"] = "REGISTERED-003"
+_typo_result = _registration_db.update_counter_record(
+    "counter-serial-typo-validation", _typo_reading
+)
+if not _typo_result.get("linked_to_inventory"):
+    raise SystemExit(f"ERROR Historial: la corrección no vinculó el equipo {_typo_result}.")
+_registration_connection = sqlite3.connect(_registration_db_path)
+try:
+    _registration_connection.row_factory = sqlite3.Row
+    _corrected = _registration_connection.execute(
+        "SELECT equipment_id,serial_snapshot FROM atlas_counter_readings WHERE external_uid=?",
+        ("counter-serial-typo-validation",),
+    ).fetchone()
+    _audit_count = _registration_connection.execute(
+        "SELECT COUNT(*) FROM atlas_counter_reading_edits WHERE record_uid=?",
+        ("counter-serial-typo-validation",),
+    ).fetchone()[0]
+    if (
+        _corrected is None
+        or int(_corrected["equipment_id"]) != _registered_incomplete
+        or _corrected["serial_snapshot"] != "REGISTERED-003"
+        or _audit_count != 1
+    ):
+        raise SystemExit("ERROR Historial: corrección o trazabilidad incompleta.")
+finally:
+    _registration_connection.close()
 _registration_root.cleanup()
 print("COUNTER BULK EQUIPMENT REGISTRATION VALIDATION: PASS")
