@@ -1,0 +1,6 @@
+CodeCafe Atlas v1.0.24.49 — informe de regresión
+
+- Resaltado de series sin vincular: validado.
+- Filtro directo desde el indicador: validado.
+- Conteos separados de lecturas y equipos: conservados.
+- Edición histórica, exportación e integridad de base: conservadas.

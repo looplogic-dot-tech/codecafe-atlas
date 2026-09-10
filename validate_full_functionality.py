@@ -571,7 +571,7 @@ print("V1.0.24.47 VISIBLE COUNTER HISTORY ACTIONS GUARD: PASS")
 for _fragment in (
     'id="recordCount">0 lecturas históricas',
     'id="equipmentCount">0 equipos únicos',
-    'id="unlinkedCount">0 series sin vincular',
+    'id="unlinkedCount"',
     "function normalizedHistorySerial(value)",
     "function historySummary()",
     "function updateHistorySummary()",
@@ -582,3 +582,17 @@ for _fragment in (
 if '"equipmentId": row["equipment_id"]' not in _database_source:
     raise SystemExit("ERROR Resumen historial v1.0.24.48: falta vínculo con Inventario.")
 print("V1.0.24.48 COUNTER READINGS / UNIQUE EQUIPMENT SUMMARY GUARD: PASS")
+
+# v1.0.24.49: unlinked series must be immediately visible and filterable.
+for _fragment in (
+    "history-unlinked-row",
+    "unlinked-badge",
+    "history-filter-button",
+    "function unlinkedHistorySerials()",
+    "showOnlyUnlinkedHistory",
+    "badge.textContent = 'Sin vincular'",
+    "$('unlinkedCount').addEventListener('click'",
+):
+    if _fragment not in _counter_html_source:
+        raise SystemExit(f"ERROR Series sin vincular v1.0.24.49: falta {_fragment}.")
+print("V1.0.24.49 UNLINKED COUNTER SERIES HIGHLIGHT / FILTER GUARD: PASS")

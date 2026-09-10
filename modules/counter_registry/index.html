@@ -233,6 +233,33 @@
     }
     .history-date-toggle[aria-expanded="false"] .history-arrow { transform: rotate(-90deg); }
     .history-record-row[hidden] { display: none; }
+    .history-unlinked-row td {
+      background: #fff1d6;
+      border-bottom-color: #e8b85d;
+    }
+    .history-unlinked-row td:first-child { border-left: 5px solid #d97706; }
+    .unlinked-badge {
+      display: inline-flex;
+      margin-left: 8px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: #b42318;
+      color: #fff;
+      font-size: .72rem;
+      font-weight: 800;
+      vertical-align: middle;
+    }
+    .history-filter-button {
+      border: 1px solid #d97706;
+      cursor: pointer;
+      font: inherit;
+    }
+    .history-filter-button[aria-pressed="true"] {
+      background: #b42318;
+      border-color: #b42318;
+      color: #fff;
+    }
+    .history-filter-button:disabled { cursor: default; opacity: .55; }
 
     .privacy-note {
       margin-top: 12px;
@@ -719,7 +746,7 @@
           <h2>Historial de contadores</h2>
           <span class="pill" id="recordCount">0 lecturas históricas</span>
           <span class="pill" id="equipmentCount">0 equipos únicos</span>
-          <span class="pill" id="unlinkedCount">0 series sin vincular</span>
+          <button class="pill history-filter-button" id="unlinkedCount" type="button" aria-pressed="false" title="Mostrar únicamente las series sin vincular">0 series sin vincular</button>
           <span class="pill" id="databaseStatus">Conectando con la base…</span>
         </div>
         <div class="toolbar" style="margin:0;">
@@ -943,7 +970,8 @@
       nativeOcrRequests: new Map(),
       nextNativeOcrRequest: 1,
       tesseractFallbackPromise: null,
-      onlineOcrNoticeAccepted: false
+      onlineOcrNoticeAccepted: false,
+      showOnlyUnlinkedHistory: false
     };
 
     const counterReview = {
@@ -1016,6 +1044,10 @@
     $('exportExcel').addEventListener('click', exportHistoryExcel);
     $('exportCsv').addEventListener('click', exportCsv);
     $('clearHistory').addEventListener('click', clearHistory);
+    $('unlinkedCount').addEventListener('click', () => {
+      state.showOnlyUnlinkedHistory = !state.showOnlyUnlinkedHistory;
+      renderHistory();
+    });
 
     $('counterReviewClose').addEventListener('click', closeCounterReview);
     $('counterReviewCancel').addEventListener('click', closeCounterReview);
@@ -3684,11 +3716,28 @@
       };
     }
 
+    function unlinkedHistorySerials() {
+      const allSerials = new Set();
+      const linkedSerials = new Set();
+      for (const record of state.history) {
+        const serial = normalizedHistorySerial(record.equipment);
+        if (!serial) continue;
+        allSerials.add(serial);
+        if (record.equipmentId !== null && record.equipmentId !== undefined && record.equipmentId !== '') {
+          linkedSerials.add(serial);
+        }
+      }
+      return new Set([...allSerials].filter((serial) => !linkedSerials.has(serial)));
+    }
+
     function updateHistorySummary() {
       const summary = historySummary();
+      if (summary.unlinked === 0) state.showOnlyUnlinkedHistory = false;
       $('recordCount').textContent = `${summary.readings} ${summary.readings === 1 ? 'lectura histórica' : 'lecturas históricas'}`;
       $('equipmentCount').textContent = `${summary.equipment} ${summary.equipment === 1 ? 'equipo único' : 'equipos únicos'}`;
-      $('unlinkedCount').textContent = `${summary.unlinked} ${summary.unlinked === 1 ? 'serie sin vincular' : 'series sin vincular'}`;
+      $('unlinkedCount').textContent = `${summary.unlinked} ${summary.unlinked === 1 ? 'serie sin vincular' : 'series sin vincular'}${state.showOnlyUnlinkedHistory ? ' · mostrando solo estas' : ''}`;
+      $('unlinkedCount').disabled = summary.unlinked === 0;
+      $('unlinkedCount').setAttribute('aria-pressed', state.showOnlyUnlinkedHistory ? 'true' : 'false');
       return summary;
     }
 
@@ -3713,8 +3762,12 @@
         return;
       }
 
+      const unlinkedSerials = unlinkedHistorySerials();
+      const visibleHistory = state.showOnlyUnlinkedHistory
+        ? state.history.filter((record) => unlinkedSerials.has(normalizedHistorySerial(record.equipment)))
+        : state.history;
       const groups = new Map();
-      for (const record of state.history) {
+      for (const record of visibleHistory) {
         const groupKey = historyDateKey(record.date);
         if (!groups.has(groupKey)) groups.set(groupKey, []);
         groups.get(groupKey).push(record);
@@ -3748,8 +3801,10 @@
 
         const detailRows = [];
         for (const record of records) {
+          const recordIsUnlinked = unlinkedSerials.has(normalizedHistorySerial(record.equipment));
           const row = document.createElement('tr');
           row.className = 'history-record-row';
+          if (recordIsUnlinked) row.classList.add('history-unlinked-row');
           row.dataset.historyGroup = groupId;
           row.hidden = !initiallyOpen;
 
@@ -3797,6 +3852,13 @@
             const cell = document.createElement('td');
             if (index >= 4) cell.className = 'num';
             cell.textContent = displayValue(value);
+            if (index === 1 && recordIsUnlinked) {
+              const badge = document.createElement('span');
+              badge.className = 'unlinked-badge';
+              badge.textContent = 'Sin vincular';
+              badge.title = 'Esta serie del historial no coincide con ningún equipo del Inventario';
+              cell.appendChild(badge);
+            }
             row.appendChild(cell);
             if (index === 0) row.appendChild(action);
           });

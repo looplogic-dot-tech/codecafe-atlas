@@ -1,4 +1,11 @@
-# CodeCafe Atlas v1.0.24.48
+# CodeCafe Atlas v1.0.24.49
+
+## v1.0.24.49 — series sin vincular localizables
+
+- Resalta en color ámbar las lecturas cuya serie no corresponde con ningún equipo de Inventario.
+- Añade a cada una la etiqueta roja `Sin vincular`.
+- El indicador de series sin vincular funciona también como filtro para mostrar únicamente esas filas.
+- El filtro puede activarse y desactivarse sin modificar ningún registro.
 
 ## v1.0.24.48 — conteo inequívoco del historial
 
