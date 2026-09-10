@@ -193,6 +193,7 @@
     th { background: var(--panel); color: #34424f; }
     td.num, th.num { text-align: right; }
     .mini-btn { padding: 6px 9px; border-radius: 8px; font-size: .78rem; }
+    .history-actions { white-space: nowrap; min-width: 132px; }
     .batch-serial-input {
       width: 160px;
       min-width: 130px;
@@ -730,6 +731,7 @@
           <thead>
             <tr>
               <th>Fecha</th>
+              <th>Acción</th>
               <th>Equipo / serie</th>
               <th>Modelo</th>
               <th>Archivo</th>
@@ -740,7 +742,6 @@
               <th class="num">Atascos</th>
               <th class="num">Mal alim.</th>
               <th class="num">Economode</th>
-              <th>Acción</th>
             </tr>
           </thead>
           <tbody id="historyBody"></tbody>
@@ -3726,14 +3727,8 @@
             record.economode
           ];
 
-          values.forEach((value, index) => {
-            const cell = document.createElement('td');
-            if (index >= 4) cell.className = 'num';
-            cell.textContent = displayValue(value);
-            row.appendChild(cell);
-          });
-
           const action = document.createElement('td');
+          action.className = 'history-actions';
           const editButton = document.createElement('button');
           editButton.type = 'button';
           editButton.className = 'mini-btn secondary';
@@ -3757,7 +3752,14 @@
             );
           });
           action.append(editButton, document.createTextNode(' '), button);
-          row.appendChild(action);
+
+          values.forEach((value, index) => {
+            const cell = document.createElement('td');
+            if (index >= 4) cell.className = 'num';
+            cell.textContent = displayValue(value);
+            row.appendChild(cell);
+            if (index === 0) row.appendChild(action);
+          });
           body.appendChild(row);
           detailRows.push(row);
         }

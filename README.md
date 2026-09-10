@@ -1,4 +1,10 @@
-# CodeCafe Atlas v1.0.24.46
+# CodeCafe Atlas v1.0.24.47
+
+## v1.0.24.47 — acciones históricas siempre visibles
+
+- Mueve la columna `Acción` inmediatamente después de `Fecha`.
+- Los botones `Editar` y `Eliminar` quedan visibles sin desplazarse hasta el extremo derecho de la tabla.
+- Conserva íntegramente la edición histórica y las advertencias de series de v1.0.24.46.
 
 ## v1.0.24.46 — historial de contadores editable
 

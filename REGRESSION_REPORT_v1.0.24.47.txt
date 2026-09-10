@@ -1,0 +1,8 @@
+CodeCafe Atlas v1.0.24.47 — informe de regresión
+
+Resultado: APROBADO
+
+- Acción aparece después de Fecha y antes de Equipo / serie.
+- Editar y Eliminar se presentan juntos y sin salto de línea.
+- Edición histórica y detección de series parecidas permanecen activas.
+- Validadores acumulativos y control de identidad: PASS.

@@ -545,3 +545,24 @@ for _fragment in (
     if _fragment not in _counter_html_source:
         raise SystemExit(f"ERROR Interfaz historial v1.0.24.46: falta {_fragment}.")
 print("V1.0.24.46 EDITABLE COUNTER HISTORY / TYPO WARNING GUARD: PASS")
+
+# v1.0.24.47: history actions must be placed beside the date, not beyond all
+# wide counter columns where they disappear from the initial viewport.
+_history_header = _counter_html_source[
+    _counter_html_source.index("<h2>Historial de contadores</h2>"):
+    _counter_html_source.index('<tbody id="historyBody">')
+]
+if not (
+    _history_header.index("<th>Fecha</th>")
+    < _history_header.index("<th>Acción</th>")
+    < _history_header.index("<th>Equipo / serie</th>")
+):
+    raise SystemExit("ERROR Historial v1.0.24.47: Acción no está junto a Fecha.")
+for _fragment in (
+    ".history-actions { white-space: nowrap;",
+    "action.className = 'history-actions'",
+    "if (index === 0) row.appendChild(action)",
+):
+    if _fragment not in _counter_html_source:
+        raise SystemExit(f"ERROR Historial visible v1.0.24.47: falta {_fragment}.")
+print("V1.0.24.47 VISIBLE COUNTER HISTORY ACTIONS GUARD: PASS")
