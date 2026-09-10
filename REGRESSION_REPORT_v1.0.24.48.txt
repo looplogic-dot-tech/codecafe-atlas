@@ -1,0 +1,6 @@
+CodeCafe Atlas v1.0.24.48 — informe de regresión
+
+- Conteo separado de lecturas históricas y equipos únicos: validado.
+- Identificación de series sin vínculo con Inventario: validada.
+- Historial editable y acciones visibles: conservados.
+- Integridad y compatibilidad de base de datos: conservadas.

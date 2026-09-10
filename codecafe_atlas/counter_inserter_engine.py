@@ -44,7 +44,7 @@ from typing import Any, Iterable, Iterator, Optional
 from xml.etree import ElementTree as ET
 
 APP_NAME = "CodeCafe Atlas — Insertador inteligente de contadores"
-APP_VERSION = "1.0.24.47"
+APP_VERSION = "1.0.24.48"
 
 MASTER_SHEET_CANDIDATES = (
     "1__Consumo_de_Impresión_Mono",

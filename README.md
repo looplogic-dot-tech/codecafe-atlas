@@ -1,4 +1,11 @@
-# CodeCafe Atlas v1.0.24.47
+# CodeCafe Atlas v1.0.24.48
+
+## v1.0.24.48 — conteo inequívoco del historial
+
+- Separa visualmente el número de lecturas históricas del número de equipos únicos.
+- Muestra también cuántas series del historial todavía no están vinculadas con Inventario.
+- Las lecturas mensuales anteriores permanecen disponibles, pero nunca se presentan como equipos adicionales.
+- Normaliza espacios, puntos, guiones y mayúsculas al contar series para evitar diferencias puramente tipográficas.
 
 ## v1.0.24.47 — acciones históricas siempre visibles
 

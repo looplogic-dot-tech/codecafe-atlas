@@ -566,3 +566,19 @@ for _fragment in (
     if _fragment not in _counter_html_source:
         raise SystemExit(f"ERROR Historial visible v1.0.24.47: falta {_fragment}.")
 print("V1.0.24.47 VISIBLE COUNTER HISTORY ACTIONS GUARD: PASS")
+
+# v1.0.24.48: historical readings and unique equipment are different metrics.
+for _fragment in (
+    'id="recordCount">0 lecturas históricas',
+    'id="equipmentCount">0 equipos únicos',
+    'id="unlinkedCount">0 series sin vincular',
+    "function normalizedHistorySerial(value)",
+    "function historySummary()",
+    "function updateHistorySummary()",
+    "historyDatabaseStatusText()",
+):
+    if _fragment not in _counter_html_source:
+        raise SystemExit(f"ERROR Resumen historial v1.0.24.48: falta {_fragment}.")
+if '"equipmentId": row["equipment_id"]' not in _database_source:
+    raise SystemExit("ERROR Resumen historial v1.0.24.48: falta vínculo con Inventario.")
+print("V1.0.24.48 COUNTER READINGS / UNIQUE EQUIPMENT SUMMARY GUARD: PASS")

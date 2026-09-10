@@ -2313,6 +2313,7 @@ class Database:
                 """
                 SELECT
                     record_uid,
+                    equipment_id,
                     reading_date,
                     serial_number,
                     model,
@@ -2336,6 +2337,7 @@ class Database:
         return [
             {
                 "id": row["record_uid"],
+                "equipmentId": row["equipment_id"],
                 "date": row["reading_date"],
                 "equipment": row["serial_number"],
                 "model": row["model"],

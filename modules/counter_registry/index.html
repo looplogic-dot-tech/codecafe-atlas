@@ -717,7 +717,9 @@
       <div class="card-head" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
         <div>
           <h2>Historial de contadores</h2>
-          <span class="pill" id="recordCount">0 registros</span>
+          <span class="pill" id="recordCount">0 lecturas históricas</span>
+          <span class="pill" id="equipmentCount">0 equipos únicos</span>
+          <span class="pill" id="unlinkedCount">0 series sin vincular</span>
           <span class="pill" id="databaseStatus">Conectando con la base…</span>
         </div>
         <div class="toolbar" style="margin:0;">
@@ -1223,7 +1225,7 @@
 
           state.dbReady = true;
           setDatabaseStatus(
-            `Base común conectada · ${state.history.length} registro(s)`,
+            historyDatabaseStatusText(),
             'ok'
           );
         } catch (error) {
@@ -1249,7 +1251,7 @@
         }
         state.dbReady = true;
         setDatabaseStatus(
-          `Base común conectada · ${state.history.length} registro(s)`,
+          historyDatabaseStatusText(),
           'ok'
         );
         return {
@@ -1329,7 +1331,7 @@
           ? ' La lectura quedó vinculada al equipo correcto del Inventario.'
           : ' La serie continúa sin un equipo exacto en Inventario.';
         setDatabaseStatus(
-          `Lectura corregida · ${state.history.length} registro(s)`,
+          historyDatabaseStatusText('Lectura corregida'),
           response.linked_to_inventory ? 'ok' : 'warn'
         );
         alert(`Corrección guardada.${linkMessage}`);
@@ -3097,8 +3099,8 @@
       const hostnameText = hostnameSaveSummary(databaseResult);
       setStatus(
         databaseResult.stored
-          ? `${records.length} registro(s) guardado(s) en la base común.${registrationText}${hostnameText}`
-          : `${records.length} registro(s) guardado(s) localmente; la base común no respondió.`,
+          ? `${records.length} lectura(s) guardada(s) en la base común.${registrationText}${hostnameText}`
+          : `${records.length} lectura(s) guardada(s) localmente; la base común no respondió.`,
         100
       );
       showHostnameConflicts(databaseResult);
@@ -3657,17 +3659,55 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.history));
     }
 
+    function normalizedHistorySerial(value) {
+      return String(value || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[\s.\-]/g, '');
+    }
+
+    function historySummary() {
+      const serials = new Set();
+      const linkedSerials = new Set();
+      for (const record of state.history) {
+        const serial = normalizedHistorySerial(record.equipment);
+        if (!serial) continue;
+        serials.add(serial);
+        if (record.equipmentId !== null && record.equipmentId !== undefined && record.equipmentId !== '') {
+          linkedSerials.add(serial);
+        }
+      }
+      return {
+        readings: state.history.length,
+        equipment: serials.size,
+        unlinked: [...serials].filter((serial) => !linkedSerials.has(serial)).length
+      };
+    }
+
+    function updateHistorySummary() {
+      const summary = historySummary();
+      $('recordCount').textContent = `${summary.readings} ${summary.readings === 1 ? 'lectura histórica' : 'lecturas históricas'}`;
+      $('equipmentCount').textContent = `${summary.equipment} ${summary.equipment === 1 ? 'equipo único' : 'equipos únicos'}`;
+      $('unlinkedCount').textContent = `${summary.unlinked} ${summary.unlinked === 1 ? 'serie sin vincular' : 'series sin vincular'}`;
+      return summary;
+    }
+
+    function historyDatabaseStatusText(prefix = 'Base común conectada') {
+      const summary = historySummary();
+      return `${prefix} · ${summary.readings} lectura(s) · ${summary.equipment} equipo(s) único(s)`;
+    }
+
     function renderHistory() {
       const body = $('historyBody');
       body.innerHTML = '';
-      $('recordCount').textContent = `${state.history.length} ${state.history.length === 1 ? 'registro' : 'registros'}`;
+      updateHistorySummary();
 
       if (!state.history.length) {
         const row = document.createElement('tr');
         const cell = document.createElement('td');
         cell.colSpan = 12;
         cell.className = 'empty-row';
-        cell.textContent = 'No hay registros guardados.';
+        cell.textContent = 'No hay lecturas guardadas.';
         row.appendChild(cell);
         body.appendChild(row);
         return;
@@ -3697,7 +3737,7 @@
         toggle.setAttribute('aria-controls', groupId);
 
         const label = document.createElement('span');
-        label.textContent = `${historyDateLabel(groupKey)} · ${records.length} ${records.length === 1 ? 'registro' : 'registros'}`;
+        label.textContent = `${historyDateLabel(groupKey)} · ${records.length} ${records.length === 1 ? 'lectura' : 'lecturas'}`;
         const arrow = document.createElement('span');
         arrow.className = 'history-arrow';
         arrow.textContent = '▼';
@@ -3747,7 +3787,7 @@
             persistHistory();
             renderHistory();
             setDatabaseStatus(
-              `Base común conectada · ${state.history.length} registro(s)`,
+              historyDatabaseStatusText(),
               'ok'
             );
           });
@@ -4107,7 +4147,7 @@
       state.history = [];
       persistHistory();
       renderHistory();
-      setDatabaseStatus('Base común conectada · 0 registros', 'ok');
+      setDatabaseStatus('Base común conectada · 0 lecturas · 0 equipos únicos', 'ok');
     }
 
     function setBusy(busy) {
