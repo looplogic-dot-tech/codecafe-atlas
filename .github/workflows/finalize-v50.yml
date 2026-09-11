@@ -1,0 +1,125 @@
+name: Finalize v1.0.24.50
+
+on:
+  push:
+    branches: ["v1.0.24.50-finalize"]
+    paths: [".github/workflows/finalize-v50.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.0.24.50-finalize
+          fetch-depth: 0
+
+      - name: Integrate v50 changes directly
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          root = Path('.')
+
+          # Service order: persist the last destination and keep actions visible.
+          p = root / 'codecafe_atlas/service_order_page.py'
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('        self.output_folder.clear()\n', '        self.output_folder.setText(self.last_output_folder or "")\n', 1)
+
+          old = '''            self.settings_path.write_text(\n                json.dumps(\n                    {"last_output_folder": folder},\n                    ensure_ascii=False,\n                    indent=2,\n                ),\n                encoding="utf-8",\n            )\n            self.last_output_folder = folder\n'''
+          new = '''            payload: dict = {}\n            if self.settings_path.exists():\n                try:\n                    loaded = json.loads(self.settings_path.read_text(encoding="utf-8"))\n                    if isinstance(loaded, dict):\n                        payload.update(loaded)\n                except (OSError, ValueError, TypeError):\n                    pass\n            payload["last_output_folder"] = folder\n            self.settings_path.write_text(\n                json.dumps(payload, ensure_ascii=False, indent=2),\n                encoding="utf-8",\n            )\n            self.last_output_folder = folder\n'''
+          if old not in s:
+              raise SystemExit('service settings block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    def save_record(self):\n        try:\n            values = self.field_values()\n            self.validate(values, require_output=False)\n'''
+          new = '''    def save_record(self):\n        try:\n            folder = self.output_folder.text().strip()\n            if folder and Path(folder).is_dir():\n                self._save_last_output_folder(folder)\n            values = self.field_values()\n            self.validate(values, require_output=False)\n'''
+          if old not in s:
+              raise SystemExit('save_record block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        form_root.addWidget(service_box)\n        form_root.addLayout(actions)\n        form_root.addStretch(1)\n        self.form_scroll.setWidget(form_host)\n        splitter.addWidget(self.form_scroll)\n\n        # History\n'''
+          new = '''        form_root.addWidget(service_box)\n        form_root.addStretch(1)\n        self.form_scroll.setWidget(form_host)\n\n        # Keep primary actions permanently visible while only the form scrolls.\n        form_panel = QWidget()\n        form_panel_layout = QVBoxLayout(form_panel)\n        form_panel_layout.setContentsMargins(0, 0, 0, 0)\n        form_panel_layout.setSpacing(6)\n        form_panel_layout.addWidget(self.form_scroll, 1)\n\n        sticky_actions = QWidget()\n        sticky_actions.setObjectName("serviceOrderStickyActions")\n        sticky_actions.setLayout(actions)\n        form_panel_layout.addWidget(sticky_actions, 0)\n        splitter.addWidget(form_panel)\n\n        # History\n'''
+          if old not in s:
+              raise SystemExit('service action placement block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Counter registry: backend refuses full-history erasure without exact phrase.
+          p = root / 'codecafe_atlas/counter_registry_page.py'
+          s = p.read_text(encoding='utf-8')
+          old = '''    @Slot(result=str)\n    def clearRecords(self) -> str:\n        try:\n            deleted = self.database.clear_counter_records()\n            return self._response(ok=True, deleted=deleted)\n        except Exception as error:\n            return self._response(ok=False, error=str(error))\n'''
+          new = '''    @Slot(str, result=str)\n    def clearRecords(self, confirmation: str) -> str:\n        if str(confirmation or "").strip() != "BORRAR HISTORIAL":\n            return self._response(\n                ok=False,\n                error="Confirmación de seguridad inválida. No se borró ningún registro.",\n            )\n        try:\n            deleted = self.database.clear_counter_records()\n            return self._response(ok=True, deleted=deleted)\n        except Exception as error:\n            return self._response(ok=False, error=str(error))\n'''
+          if old not in s:
+              raise SystemExit('counter clearRecords block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Counter registry UI: typed phrase + second confirmation.
+          p = root / 'modules/counter_registry/index.html'
+          s = p.read_text(encoding='utf-8')
+          old = '''    async function clearHistory() {\n      if (!state.history.length) return;\n      if (!confirm('¿Borrar todos los registros de contadores de la base común? Esta acción no puede deshacerse.')) return;\n\n      if (state.dbBridge) {\n        try {\n          await bridgeCall('clearRecords');\n        } catch (error) {\n          alert(`No se pudo borrar la base común: ${error.message || error}`);\n          return;\n        }\n      }\n\n      state.history = [];\n      persistHistory();\n      renderHistory();\n      setDatabaseStatus('Base común conectada · 0 lecturas · 0 equipos únicos', 'ok');\n    }\n'''
+          new = '''    async function clearHistory() {\n      if (!state.history.length) return;\n\n      const count = state.history.length;\n      const requiredPhrase = 'BORRAR HISTORIAL';\n      const typed = prompt(\n        `PELIGRO: vas a borrar ${count} registro(s) históricos de contadores.\\n\\n` +\n        `Esta acción no se puede deshacer.\\n\\n` +\n        `Escribe exactamente ${requiredPhrase} para continuar:`\n      );\n      if (typed === null) return;\n      if (String(typed).trim() !== requiredPhrase) {\n        alert('Confirmación incorrecta. No se borró ningún registro.');\n        return;\n      }\n      if (!confirm(`Última confirmación: ¿borrar definitivamente ${count} registro(s) de contadores?`)) return;\n\n      if (state.dbBridge) {\n        try {\n          const result = await bridgeCall('clearRecords', requiredPhrase);\n          if (result && result.ok === false) {\n            throw new Error(result.error || 'La base común rechazó la operación.');\n          }\n        } catch (error) {\n          alert(`No se pudo borrar la base común: ${error.message || error}`);\n          return;\n        }\n      }\n\n      state.history = [];\n      persistHistory();\n      renderHistory();\n      setDatabaseStatus('Base común conectada · 0 lecturas · 0 equipos únicos', 'ok');\n    }\n'''
+          if old not in s:
+              raise SystemExit('counter clearHistory block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Normal startup; no monkey patch layer.
+          (root / 'main.py').write_text('from codecafe_atlas.main_window import run\n\nif __name__ == "__main__":\n    raise SystemExit(run())\n', encoding='utf-8')
+          patch = root / 'codecafe_atlas/v1_0_24_50_patch.py'
+          if patch.exists():
+              patch.unlink()
+
+          # Update validator for the intentional new clear-form behavior.
+          p = root / 'validate_full_functionality.py'
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('"self.output_folder.clear()", "self.dependency_filter.clear()",', '"self.output_folder.setText(self.last_output_folder or \\\"\\\")", "self.dependency_filter.clear()",')
+          p.write_text(s, encoding='utf-8')
+
+          # v50 documentation.
+          (root / 'CHANGES_v1.0.24.50.md').write_text('''# CodeCafe Atlas v1.0.24.50\n\n- Órdenes de servicio recuerdan la última carpeta válida usada en `Guardar en`.\n- `Nuevo / limpiar` conserva esa ubicación para la siguiente orden.\n- Los botones de acción de la orden permanecen visibles mientras se desplaza el formulario.\n- El borrado completo del historial de contadores exige escribir `BORRAR HISTORIAL` y aceptar una segunda confirmación.\n- La capa Python vuelve a validar la frase antes de permitir el borrado de la base.\n- Cambios integrados directamente sobre v1.0.24.49, sin parche de arranque ni monkey-patching.\n''', encoding='utf-8')
+
+          p = root / 'README.md'
+          s = p.read_text(encoding='utf-8')
+          section = '''## v1.0.24.50 — flujo de órdenes y protección de historial\n\n- Recuerda la última carpeta válida usada en `Guardar en` para nuevas órdenes de servicio.\n- Mantiene siempre visible la barra inferior de acciones mientras el formulario se desplaza.\n- El borrado completo del historial de contadores requiere escribir `BORRAR HISTORIAL` y aceptar una segunda confirmación.\n- La validación de borrado también se aplica en la capa Python antes de tocar la base de datos.\n- Cambios integrados directamente sobre v1.0.24.49, sin parches de arranque.\n\n'''
+          heading = '# CodeCafe Atlas v1.0.24.50\n\n'
+          if section not in s:
+              s = heading + section + s[len(heading):] if s.startswith(heading) else heading + section + s
+          p.write_text(s, encoding='utf-8')
+
+          # Remove temporary packaging workflow and this one from the final tree.
+          for wf in (root / '.github/workflows/package-v50-source.yml', root / '.github/workflows/finalize-v50.yml'):
+              if wf.exists():
+                  wf.unlink()
+
+          # Refresh hash manifest after all source changes.
+          manifest = root / 'SOURCE_FILE_HASHES_SHA256.txt'
+          lines = []
+          for f in sorted(root.rglob('*')):
+              if not f.is_file() or f == manifest or '.git' in f.parts:
+                  continue
+              lines.append(f"{hashlib.sha256(f.read_bytes()).hexdigest()}  ./{f.relative_to(root).as_posix()}")
+          manifest.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+      - name: Validate
+        run: |
+          python -m py_compile main.py codecafe_atlas/service_order_page.py codecafe_atlas/counter_registry_page.py
+          python validate_public_identity.py
+          python validate_full_functionality.py
+          python validate_before_build.py
+          python validate_homologator_runtime.py
+
+      - name: Commit clean v50
+        run: |
+          git config user.name "CodeCafe Atlas automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "CodeCafe Atlas v1.0.24.50" || exit 0
+          git push origin HEAD:v1.0.24.50-finalize
