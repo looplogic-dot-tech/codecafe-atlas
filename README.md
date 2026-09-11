@@ -1,4 +1,14 @@
-# CodeCafe Atlas v1.0.24.50
+# CodeCafe Atlas v1.0.24.51
+
+## v1.0.24.51 — base de datos persistente entre versiones
+
+- Las compilaciones instaladas dejan de guardar la base operativa dentro de `dist/CodeCafe-Atlas/data`.
+- Linux usa `~/.local/share/CodeCafe-Atlas/data` (o `XDG_DATA_HOME`); Windows y macOS usan sus directorios de datos de usuario equivalentes.
+- En el primer arranque, si todavía no existe una base persistente, Atlas busca instalaciones anteriores, valida que sean bases Atlas y copia la más completa sin borrar ni modificar el origen.
+- La selección prioriza la base con más equipos registrados para evitar adoptar una base nueva o de prueba.
+- Los respaldos de compilaciones instaladas también quedan fuera de la carpeta versionada.
+- Se conserva íntegramente el comportamiento funcional de v1.0.24.50.
+
 
 ## v1.0.24.50 — flujo de órdenes y protección de historial
 

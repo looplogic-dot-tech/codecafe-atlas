@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import sqlite3
@@ -24,8 +25,24 @@ def bundled_root() -> Path:
 def asset_path(name: str) -> Path:
     return bundled_root() / "assets" / name
 
+def _persistent_data_dir() -> Path:
+    override = str(os.environ.get("CODECAFE_ATLAS_DATA_DIR", "")).strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    home = Path.home()
+    if sys.platform.startswith("win"):
+        base = Path(os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA") or (home / "AppData" / "Roaming"))
+        return base / "CodeCafe-Atlas" / "data"
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "CodeCafe-Atlas" / "data"
+    base = Path(os.environ.get("XDG_DATA_HOME") or (home / ".local" / "share"))
+    return base / "CodeCafe-Atlas" / "data"
+
 def data_dir() -> Path:
-    path = application_root() / "data"
+    # Packaged builds must keep operational data outside the versioned program
+    # directory. Rebuilding or extracting a new Atlas version must not create a
+    # separate empty database or destroy the user's working database.
+    path = _persistent_data_dir() if getattr(sys, "frozen", False) else application_root() / "data"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -131,8 +148,85 @@ def _migrate_previous_database_if_needed(current: Path) -> None:
         f"órdenes: {counts[2]}, contadores: {counts[3]}."
     )
 
+def _legacy_install_database_candidates(current: Path) -> list[Path]:
+    """Find prior packaged Atlas databases for one-time migration.
+
+    This is only used when the new persistent database does not yet exist.
+    Candidates are read-only, must have a recognized Atlas schema, and are
+    copied rather than moved. The source installation is never modified.
+    """
+    roots: list[Path] = []
+    app = application_root()
+    for root in (
+        app.parent,
+        app.parent.parent,
+        app.parent.parent.parent,
+        Path.home() / "Downloads",
+        Path.home() / "Desktop",
+    ):
+        try:
+            resolved = root.resolve()
+        except OSError:
+            continue
+        if resolved not in roots and resolved.exists():
+            roots.append(resolved)
+
+    found: list[Path] = []
+    seen: set[Path] = set()
+    current_resolved = current.resolve()
+    for root in roots:
+        try:
+            iterator = root.rglob("atlas.db")
+            for candidate in iterator:
+                try:
+                    resolved = candidate.resolve()
+                except OSError:
+                    continue
+                if resolved == current_resolved or resolved in seen:
+                    continue
+                # Limit discovery to Atlas-looking installation paths.
+                nearby = "/".join(part.casefold() for part in resolved.parts[-7:])
+                if "atlas" not in nearby:
+                    continue
+                if candidate.parent.name.casefold() != "data":
+                    continue
+                if _looks_like_atlas_database(candidate):
+                    seen.add(resolved)
+                    found.append(candidate)
+        except OSError:
+            continue
+    return found
+
+def _migrate_previous_install_database_if_needed(current: Path) -> None:
+    global _LAST_DATABASE_MIGRATION
+    if current.exists() and current.stat().st_size > 0:
+        return
+    ranked = []
+    for candidate in _legacy_install_database_candidates(current):
+        counts = _database_counts(candidate)
+        schema_kind = _database_schema_kind(candidate)
+        if not schema_kind:
+            continue
+        # Prefer the database with the most registered equipment, then the most
+        # total operational records, then the newest file. This avoids adopting
+        # a fresh/test build when a fuller working Atlas database is available.
+        ranked.append((counts[1], sum(counts), candidate.stat().st_mtime, candidate, counts, schema_kind))
+    if not ranked:
+        return
+    _, _, _, source, counts, schema_kind = max(ranked, key=lambda item: (item[0], item[1], item[2]))
+    current.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, current)
+    _LAST_DATABASE_MIGRATION = (
+        f"Se recuperó la base operativa de una instalación anterior: {source}. "
+        f"Formato: {schema_kind}. Dependencias: {counts[0]}, equipos: {counts[1]}, "
+        f"órdenes: {counts[2]}, contadores: {counts[3]}. "
+        f"Desde ahora Atlas conservará esta base en {current}."
+    )
+
 def database_path() -> Path:
     path = data_dir() / "atlas.db"
+    if getattr(sys, "frozen", False):
+        _migrate_previous_install_database_if_needed(path)
     _migrate_previous_database_if_needed(path)
     return path
 
@@ -154,6 +248,6 @@ def dashboard_dir() -> Path:
     return path
 
 def backups_dir() -> Path:
-    path = application_root() / "backups"
+    path = (data_dir().parent / "backups") if getattr(sys, "frozen", False) else (application_root() / "backups")
     path.mkdir(parents=True, exist_ok=True)
     return path
