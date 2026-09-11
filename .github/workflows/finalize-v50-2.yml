@@ -1,0 +1,54 @@
+name: Finalize v1.0.24.50 cleanly
+
+on:
+  push:
+    branches: ["v1.0.24.50-finalize"]
+    paths: [".github/workflows/finalize-v50-2.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.0.24.50-finalize
+          fetch-depth: 0
+      - name: Apply direct source changes
+        run: |
+          git apply v50_direct.patch
+          rm -f codecafe_atlas/v1_0_24_50_patch.py
+          rm -f .github/workflows/package-v50-source.yml
+          rm -f .github/workflows/finalize-v50.yml
+          rm -f .github/workflows/finalize-v50-2.yml
+          rm -f v50_direct.patch
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root = Path('.')
+          manifest = root / 'SOURCE_FILE_HASHES_SHA256.txt'
+          lines = []
+          for f in sorted(root.rglob('*')):
+              if not f.is_file() or f == manifest or '.git' in f.parts:
+                  continue
+              lines.append(f"{hashlib.sha256(f.read_bytes()).hexdigest()}  ./{f.relative_to(root).as_posix()}")
+          manifest.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate
+        run: |
+          python -m py_compile main.py codecafe_atlas/service_order_page.py codecafe_atlas/counter_registry_page.py
+          python validate_public_identity.py
+          python validate_full_functionality.py
+          python validate_before_build.py
+          python validate_homologator_runtime.py
+      - name: Commit clean v50
+        run: |
+          git config user.name "CodeCafe Atlas automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "CodeCafe Atlas v1.0.24.50"
+          git push origin HEAD:v1.0.24.50-finalize
