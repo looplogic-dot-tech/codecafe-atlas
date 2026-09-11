@@ -1,4 +1,12 @@
-# CodeCafe Atlas v1.0.24.49
+# CodeCafe Atlas v1.0.24.50
+
+## v1.0.24.50 — flujo de órdenes y protección de historial
+
+- Recuerda la última carpeta válida usada en `Guardar en` para nuevas órdenes de servicio.
+- Mantiene siempre visible la barra inferior de acciones mientras el formulario se desplaza.
+- El borrado completo del historial de contadores requiere escribir `BORRAR HISTORIAL` y aceptar una segunda confirmación.
+- La validación de borrado también se aplica en la capa Python antes de tocar la base de datos.
+- Cambios integrados directamente sobre v1.0.24.49, sin parches de arranque.
 
 ## v1.0.24.49 — series sin vincular localizables
 

@@ -565,8 +565,13 @@ class CounterDatabaseBridge(QObject):
         except Exception as error:
             return self._response(ok=False, error=str(error))
 
-    @Slot(result=str)
-    def clearRecords(self) -> str:
+    @Slot(str, result=str)
+    def clearRecords(self, confirmation: str) -> str:
+        if str(confirmation or "").strip() != "BORRAR HISTORIAL":
+            return self._response(
+                ok=False,
+                error="Confirmación de seguridad inválida. No se borró ningún registro.",
+            )
         try:
             deleted = self.database.clear_counter_records()
             return self._response(ok=True, deleted=deleted)

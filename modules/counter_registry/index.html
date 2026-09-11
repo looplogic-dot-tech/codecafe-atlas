@@ -4195,11 +4195,27 @@
 
     async function clearHistory() {
       if (!state.history.length) return;
-      if (!confirm('¿Borrar todos los registros de contadores de la base común? Esta acción no puede deshacerse.')) return;
+
+      const count = state.history.length;
+      const requiredPhrase = 'BORRAR HISTORIAL';
+      const typed = prompt(
+        `PELIGRO: vas a borrar ${count} registro(s) históricos de contadores.\n\n` +
+        `Esta acción no se puede deshacer.\n\n` +
+        `Escribe exactamente ${requiredPhrase} para continuar:`
+      );
+      if (typed === null) return;
+      if (String(typed).trim() !== requiredPhrase) {
+        alert('Confirmación incorrecta. No se borró ningún registro.');
+        return;
+      }
+      if (!confirm(`Última confirmación: ¿borrar definitivamente ${count} registro(s) de contadores?`)) return;
 
       if (state.dbBridge) {
         try {
-          await bridgeCall('clearRecords');
+          const result = await bridgeCall('clearRecords', requiredPhrase);
+          if (result && result.ok === false) {
+            throw new Error(result.error || 'La base común rechazó la operación.');
+          }
         } catch (error) {
           alert(`No se pudo borrar la base común: ${error.message || error}`);
           return;

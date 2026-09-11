@@ -355,10 +355,21 @@ class ServiceOrderPage(QWidget):
         form_root.addWidget(equipment_box)
         form_root.addWidget(validation_box)
         form_root.addWidget(service_box)
-        form_root.addLayout(actions)
         form_root.addStretch(1)
         self.form_scroll.setWidget(form_host)
-        splitter.addWidget(self.form_scroll)
+
+        # Keep primary actions permanently visible while only the form scrolls.
+        form_panel = QWidget()
+        form_panel_layout = QVBoxLayout(form_panel)
+        form_panel_layout.setContentsMargins(0, 0, 0, 0)
+        form_panel_layout.setSpacing(6)
+        form_panel_layout.addWidget(self.form_scroll, 1)
+
+        sticky_actions = QWidget()
+        sticky_actions.setObjectName("serviceOrderStickyActions")
+        sticky_actions.setLayout(actions)
+        form_panel_layout.addWidget(sticky_actions, 0)
+        splitter.addWidget(form_panel)
 
         # History
         history_host = QWidget()
@@ -791,12 +802,17 @@ class ServiceOrderPage(QWidget):
                 parents=True,
                 exist_ok=True,
             )
+            payload: dict = {}
+            if self.settings_path.exists():
+                try:
+                    loaded = json.loads(self.settings_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        payload.update(loaded)
+                except (OSError, ValueError, TypeError):
+                    pass
+            payload["last_output_folder"] = folder
             self.settings_path.write_text(
-                json.dumps(
-                    {"last_output_folder": folder},
-                    ensure_ascii=False,
-                    indent=2,
-                ),
+                json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             self.last_output_folder = folder
@@ -1152,6 +1168,9 @@ class ServiceOrderPage(QWidget):
 
     def save_record(self):
         try:
+            folder = self.output_folder.text().strip()
+            if folder and Path(folder).is_dir():
+                self._save_last_output_folder(folder)
             values = self.field_values()
             self.validate(values, require_output=False)
             self.sync_dependency_city_state(values)
@@ -1427,7 +1446,7 @@ class ServiceOrderPage(QWidget):
         self.document_type.blockSignals(False)
         self.dgti_report.clear()
         self.provider_report.clear()
-        self.output_folder.clear()
+        self.output_folder.setText(self.last_output_folder or "")
         self.report_date.setDate(QDate.currentDate())
         self.report_time.setTime(QTime.currentTime())
 

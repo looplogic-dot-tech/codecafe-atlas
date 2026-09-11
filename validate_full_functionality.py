@@ -473,7 +473,7 @@ if _clear_node is None:
 _clear_text = _ast.get_source_segment(_service_source, _clear_node) or ""
 for _fragment in (
     "self.document_type", "self.dgti_report.clear()", "self.provider_report.clear()",
-    "self.output_folder.clear()", "self.dependency_filter.clear()",
+    "self.output_folder.setText(self.last_output_folder or \"\")", "self.dependency_filter.clear()",
     "self.dependency.setCurrentIndex(-1)", "self.auto_dependency_name",
     "self.auto_city", "self.auto_state", "self.responsible_name.clear()",
     "self.validator_name.clear()", "self.validator_role.clear()",
